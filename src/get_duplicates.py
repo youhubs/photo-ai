@@ -30,7 +30,7 @@ def get_capture_time(image_path):
     
     return None
 
-def group_images_by_time(directory, time_delta_seconds=3):
+def group_images_by_time(directory, time_delta_seconds=2):
     """
     Groups images by capture time based on EXIF metadata (within a given time delta).
     
@@ -72,7 +72,8 @@ def display_groups(groups):
         print()  # Blank line between groups
 
 # Example usage
-image_directory = '/users/tigerhu/Documents/test_photos/'
+# image_directory = '/users/tigerhu/Documents/test_photos/'
+image_directory = '/Volumes/Untitled/DCIM/186_1222/masterclasses'
 groups = group_images_by_time(image_directory)
 
 # Display groups
