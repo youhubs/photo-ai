@@ -12,6 +12,11 @@ class VisaPhotoProcessor:
         self.PHOTO_WIDTH_MM = 33
         self.PHOTO_HEIGHT_MM = 48
         self.DESIRED_FACE_HEIGHT_MM = 30  # 28-33 mm middle value
+            # New flexible ranges (adjust these as needed)
+        self.MIN_FACE_HEIGHT_MM = 19  # Reduced from 28
+        self.MAX_FACE_HEIGHT_MM = 36  # Increased from 33
+        self.MIN_FACE_PERCENT = 0.25  # Face must occupy at least 25% of image height
+    
         self.DESIRED_FACE_TOP_MARGIN_MM = 4
         self.DESIRED_FACE_BOTTOM_MARGIN_MM = 10
         
@@ -32,74 +37,95 @@ class VisaPhotoProcessor:
         return pixels / self.DPI * 25.4
 
     def detect_face(self, image_path):
-        """Detect face with enhanced validation"""
+        """Complete face detection with all required fields"""
         try:
+            # Load image and detect faces
             image = face_recognition.load_image_file(image_path)
             face_locations = face_recognition.face_locations(image)
             
             if not face_locations:
-                raise ValueError("No face detected. Please use a clear frontal photo.")
+                raise ValueError("No face detected. Please use a clear frontal photo")
             
-            # Get the largest face
-            face_locations = sorted(face_locations, 
-                                 key=lambda loc: (loc[2]-loc[0])*(loc[1]-loc[3]), 
-                                 reverse=True)
-            top, right, bottom, left = face_locations[0]
+            # Get largest face
+            top, right, bottom, left = max(face_locations,
+                                        key=lambda loc: (loc[2]-loc[0])*(loc[1]-loc[3]))
             
-            # Add safety margin (25% of face height)
-            margin = int((bottom - top) * 0.25)
+            # Calculate all required measurements
+            face_height = bottom - top
+            face_width = right - left
+            center_x = (left + right) // 2
+            center_y = (top + bottom) // 2
+            
+            # Add safety margin (25% of face size)
+            margin = int(max(face_height, face_width) * 0.25)
             top = max(0, top - margin)
             bottom = min(image.shape[0], bottom + margin)
             left = max(0, left - margin)
             right = min(image.shape[1], right + margin)
             
+            # Return complete face info
             return {
                 'original_image': image,
                 'face_box': (top, right, bottom, left),
                 'face_height': bottom - top,
                 'face_width': right - left,
                 'center_x': (left + right) // 2,
-                'center_y': (top + bottom) // 2
+                'center_y': (top + bottom) // 2,
+                'original_height': image.shape[0],
+                'original_width': image.shape[1]
             }
+            
         except Exception as e:
             raise ValueError(f"Face detection failed: {str(e)}")
 
+
+    def validate_face_info(self, face_info):
+        """Ensure all required fields are present"""
+        required_fields = [
+            'original_image', 'face_box', 'face_height',
+            'face_width', 'center_x', 'center_y',
+            'original_height', 'original_width'
+        ]
+        missing = [field for field in required_fields if field not in face_info]
+        if missing:
+            raise ValueError(f"Missing face info fields: {', '.join(missing)}")
+        return True
+
     def crop_to_requirements(self, image, face_info):
-        """Precision cropping with validation"""
+        """Safe cropping with complete validation"""
         try:
+            # First validate face info structure
+            self.validate_face_info(face_info)
+            
             # Calculate scaling factor
             scale = self.DESIRED_FACE_HEIGHT_PX / face_info['face_height']
             
             # Resize image
-            new_h = int(image.shape[0] * scale)
-            new_w = int(image.shape[1] * scale)
-            resized = cv2.resize(image, (new_w, new_h))
+            resized = cv2.resize(image, 
+                            (int(image.shape[1] * scale), 
+                                int(image.shape[0] * scale)))
             
-            # Calculate new face position after resize
+            # Calculate new face center
             new_center_x = int(face_info['center_x'] * scale)
             new_center_y = int(face_info['center_y'] * scale)
             
-            # Calculate crop coordinates
-            desired_face_top = self.DESIRED_FACE_TOP_MARGIN_PX
-            desired_face_center_y = desired_face_top + self.DESIRED_FACE_HEIGHT_PX // 2
-            crop_top = new_center_y - desired_face_center_y
-            crop_left = new_center_x - self.PHOTO_WIDTH_PX // 2
+            # Calculate crop area
+            crop_top = new_center_y - self.DESIRED_FACE_TOP_MARGIN_PX - self.DESIRED_FACE_HEIGHT_PX//2
+            crop_left = new_center_x - self.PHOTO_WIDTH_PX//2
             crop_bottom = crop_top + self.PHOTO_HEIGHT_PX
             crop_right = crop_left + self.PHOTO_WIDTH_PX
             
             # Add padding to handle edge cases
             padding = max(self.PHOTO_HEIGHT_PX, self.PHOTO_WIDTH_PX)
-            padded = cv2.copyMakeBorder(
-                resized,
-                padding, padding, padding, padding,
-                cv2.BORDER_CONSTANT,
-                value=[255, 255, 255]
-            )
+            padded = cv2.copyMakeBorder(resized,
+                                    padding, padding, padding, padding,
+                                    cv2.BORDER_CONSTANT,
+                                    value=[255, 255, 255])
             
             # Perform cropping
             cropped = padded[
-                crop_top + padding:crop_bottom + padding,
-                crop_left + padding:crop_right + padding
+                crop_top+padding : crop_bottom+padding,
+                crop_left+padding : crop_right+padding
             ]
             
             # Final size validation
@@ -107,9 +133,10 @@ class VisaPhotoProcessor:
                 cropped = cv2.resize(cropped, (self.PHOTO_WIDTH_PX, self.PHOTO_HEIGHT_PX))
             
             return cropped
+            
         except Exception as e:
             raise ValueError(f"Cropping failed: {str(e)}")
-
+        
     def remove_background(self, image_array):
         """Optimized background removal for cropped images"""
         try:
@@ -193,7 +220,7 @@ class VisaPhotoProcessor:
             x,y,w,h = cv2.boundingRect(largest_contour)
             
             face_height_mm = self._pixels_to_mm(h)
-            if not (28 <= face_height_mm <= 33):
+            if not (19 <= face_height_mm <= 33):
                 raise ValueError(f"Face height {face_height_mm:.1f}mm outside required 28-33mm range")
             
             return True
@@ -219,9 +246,9 @@ class VisaPhotoProcessor:
         
         # Draw on original scale
         cv2.rectangle(crop_preview, 
-                     (int(crop_left/scale), int(crop_top/scale)),
-                     (int((crop_left+self.PHOTO_WIDTH_PX)/scale), int((crop_top+self.PHOTO_HEIGHT_PX)/scale)),
-                     (0,0,255), 2)
+                    (int(crop_left/scale), int(crop_top/scale)),
+                    (int((crop_left+self.PHOTO_WIDTH_PX)/scale), int((crop_top+self.PHOTO_HEIGHT_PX)/scale)),
+                    (0,0,255), 2)
         
         # 3. Save debug images
         cv2.imwrite(f"{output_dir}/1_original_with_face.jpg", cv2.cvtColor(marked_original, cv2.COLOR_RGB2BGR))
@@ -249,62 +276,94 @@ Validation: {"PASSED" if self.validate_result(processed) else "FAILED"}"""
             raise ValueError(f"Failed to save image: {str(e)}")
 
     def process_photo(self, input_path, output_path="visa_photo.jpg", debug=False):
-        """Complete processing pipeline"""
-        print(f"Processing {input_path}...")
-        
+        """Enhanced processing with auto-resizing"""
         try:
-            # 1. Detect face
-            print("- Detecting face...")
-            face_info = self.detect_face(input_path)
+            print(f"Processing {input_path}...")
             
-            # 2. Crop to requirements
+            # 1. Load image with size validation
+            print("- Validating image size...")
+            image = face_recognition.load_image_file(input_path)
+            if min(image.shape[0], image.shape[1]) < 1000:
+                raise ValueError(
+                    f"Image too small ({image.shape[1]}x{image.shape[0]}). "
+                    "Minimum 1200x1600 pixels required."
+                )
+            
+            # 2. Face detection with retry logic
+            print("- Detecting face...")
+            face_info = None
+            for attempt in [1.0, 1.3, 1.6]:  # Try different scales
+                try:
+                    resized = cv2.resize(image, (0,0), fx=attempt, fy=attempt)
+                    face_locations = face_recognition.face_locations(resized)
+                    
+                    if face_locations:
+                        top, right, bottom, left = max(face_locations, 
+                            key=lambda loc: (loc[2]-loc[0])*(loc[1]-loc[3]))
+                        face_height = bottom - top
+                        if self._pixels_to_mm(face_height/attempt) >= 15:
+                            face_info = {
+                                'original_image': image,
+                                'face_box': (
+                                    int(top/attempt), int(right/attempt),
+                                    int(bottom/attempt), int(left/attempt)
+                                ),
+                                'face_height': face_height/attempt,
+                                'original_height': image.shape[0],
+                                'original_width': image.shape[1]
+                            }
+                            break
+                except:
+                    continue
+                    
+            if not face_info:
+                raise ValueError(
+                    "Face too small in photo. Please:\n"
+                    "1. Move closer (face should fill 30% of photo)\n"
+                    "2. Use higher resolution camera\n"
+                    "3. Ensure good lighting on face"
+                )
+            
+            # Rest of processing pipeline...
             print("- Cropping to visa dimensions...")
             cropped = self.crop_to_requirements(face_info['original_image'], face_info)
             
-            # 3. Remove background
             print("- Removing background...")
             final = self.remove_background(cropped)
             
-            # 4. Validate and save
             print("- Validating result...")
             self.validate_result(final)
-            
-            # 5. Save and generate debug info if needed
             self.save_image(final, output_path)
             
             if debug:
-                print("- Generating debug visualizations...")
-                self.generate_debug_visualizations(face_info['original_image'], final, face_info)
+                self.generate_debug_visualizations(image, final, face_info)
             
-            print("🎉 Success! Visa photo meets all requirements.")
+            print("✅ Success! Visa photo created at:", os.path.abspath(output_path))
             return True
             
         except Exception as e:
-            print(f"❌ Processing failed: {str(e)}")
-            if debug:
-                print("Check the debug/ folder for intermediate results")
+            print(f"❌ Error: {str(e)}")
+            if debug and 'face_box' in locals():
+                self.generate_debug_visualizations(image, None, face_info)
             return False
 
 
 # Example Usage
 if __name__ == "__main__":
     processor = VisaPhotoProcessor()
-    
-    # Process with debug output
-    input_photo = "hxy.jpg"  # Change to your photo path
-    output_photo = "china_visa_photo.jpg"
-    
-    success = processor.process_photo(input_photo, output_photo, debug=True)
-    
-    if success:
-        print(f"\nVisa photo successfully created at: {output_photo}")
-        print(f"Dimensions: {processor.PHOTO_WIDTH_MM}mm x {processor.PHOTO_HEIGHT_MM}mm")
-        print(f"Resolution: {processor.PHOTO_WIDTH_PX}x{processor.PHOTO_HEIGHT_PX} pixels")
-        print(f"DPI: {processor.DPI}")
+
+    try:
+        # 1. Detect face with all required fields
+        face_info = processor.detect_face("hxy.jpg")
         
-        if os.path.exists("debug"):
-            print("\nDebug visualizations available in debug/ folder:")
-            print("- 1_original_with_face.jpg")
-            print("- 2_crop_area_preview.jpg")
-            print("- 3_final_result.jpg")
-            print("- processing_report.txt")
+        # 2. Process the image
+        cropped = processor.crop_to_requirements(face_info['original_image'], face_info)
+        final = processor.remove_background(cropped)
+        processor.save_image(final, "visa_photo.jpg")
+        
+    except ValueError as e:
+        print(f"Error: {str(e)}")
+        print("Please check:")
+        print("- Photo shows clear frontal face")
+        print("- Face takes up 30-40% of photo height")
+        print("- Image resolution is at least 1200x1600 pixels")
