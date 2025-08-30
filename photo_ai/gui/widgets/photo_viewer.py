@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (
     QListWidgetItem,
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSize
-from PyQt6.QtGui import QPixmap, QFont, QPainter, QPen
+from PyQt6.QtGui import QPixmap, QFont, QPainter, QPen, QIcon
 
 
 class PhotoThumbnailLoader(QThread):
@@ -214,7 +214,7 @@ class PhotoViewer(QWidget):
         for i in range(self.thumbnail_list.count()):
             item = self.thumbnail_list.item(i)
             if item.data(Qt.ItemDataRole.UserRole) == photo_path:
-                item.setIcon(pixmap)
+                item.setIcon(QIcon(pixmap))
                 break
 
     def on_thumbnail_clicked(self, item: QListWidgetItem):
