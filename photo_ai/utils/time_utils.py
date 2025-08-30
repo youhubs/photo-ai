@@ -17,7 +17,7 @@ def get_capture_time(image_path: str) -> Optional[datetime]:
                 return datetime.strptime(exif[306], "%Y:%m:%d %H:%M:%S")
     except Exception:
         pass
-    
+
     # Fall back to file modification time
     try:
         timestamp = os.path.getmtime(image_path)

@@ -12,20 +12,16 @@ from .processors.background.remover import BackgroundRemover
 try:
     from .gui.app import PhotoAIApp
     from .gui.main_window import PhotoAIMainWindow
+
     GUI_AVAILABLE = True
     __all__ = [
         "PhotoProcessor",
-        "SharpnessAnalyzer", 
+        "SharpnessAnalyzer",
         "FaceDetector",
         "BackgroundRemover",
         "PhotoAIApp",
-        "PhotoAIMainWindow"
+        "PhotoAIMainWindow",
     ]
 except ImportError:
     GUI_AVAILABLE = False
-    __all__ = [
-        "PhotoProcessor",
-        "SharpnessAnalyzer", 
-        "FaceDetector",
-        "BackgroundRemover"
-    ]
+    __all__ = ["PhotoProcessor", "SharpnessAnalyzer", "FaceDetector", "BackgroundRemover"]

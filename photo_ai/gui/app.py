@@ -11,58 +11,65 @@ from .main_window import PhotoAIMainWindow
 
 class PhotoAIApp(QApplication):
     """Main Photo AI desktop application."""
-    
+
     def __init__(self, argv):
         super().__init__(argv)
-        
+
         self.setApplicationName("Photo AI")
         self.setApplicationVersion("1.0.0")
         self.setOrganizationName("Photo AI Team")
-        
+
         # Set application properties
         self.setQuitOnLastWindowClosed(True)
-        
+
         # Apply modern dark theme
         self.apply_dark_theme()
-        
+
         # Create main window
         self.main_window = PhotoAIMainWindow()
-        
+
     def apply_dark_theme(self):
         """Apply a modern dark theme to the application."""
         self.setStyle("Fusion")
-        
+
         palette = QPalette()
-        
+
         # Window colors
         palette.setColor(QPalette.ColorRole.Window, QColor(53, 53, 53))
         palette.setColor(QPalette.ColorRole.WindowText, QColor(255, 255, 255))
-        
+
         # Base colors (for input fields)
         palette.setColor(QPalette.ColorRole.Base, QColor(25, 25, 25))
         palette.setColor(QPalette.ColorRole.AlternateBase, QColor(53, 53, 53))
-        
+
         # Text colors
         palette.setColor(QPalette.ColorRole.Text, QColor(255, 255, 255))
         palette.setColor(QPalette.ColorRole.BrightText, QColor(255, 0, 0))
-        
+
         # Button colors
         palette.setColor(QPalette.ColorRole.Button, QColor(53, 53, 53))
         palette.setColor(QPalette.ColorRole.ButtonText, QColor(255, 255, 255))
-        
+
         # Highlight colors
         palette.setColor(QPalette.ColorRole.Highlight, QColor(42, 130, 218))
         palette.setColor(QPalette.ColorRole.HighlightedText, QColor(0, 0, 0))
-        
+
         # Disabled colors
-        palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.WindowText, QColor(127, 127, 127))
-        palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text, QColor(127, 127, 127))
-        palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.ButtonText, QColor(127, 127, 127))
-        
+        palette.setColor(
+            QPalette.ColorGroup.Disabled, QPalette.ColorRole.WindowText, QColor(127, 127, 127)
+        )
+        palette.setColor(
+            QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text, QColor(127, 127, 127)
+        )
+        palette.setColor(
+            QPalette.ColorGroup.Disabled, QPalette.ColorRole.ButtonText, QColor(127, 127, 127)
+        )
+
         self.setPalette(palette)
-        
+
         # Set stylesheet for additional styling
-        self.setStyleSheet("""
+        self.setStyleSheet(
+            """
             QToolTip {
                 color: #ffffff;
                 background-color: #2a2a2a;
@@ -117,8 +124,9 @@ class PhotoAIApp(QApplication):
                 left: 10px;
                 padding: 0 5px 0 5px;
             }
-        """)
-    
+        """
+        )
+
     def run(self):
         """Start the application."""
         self.main_window.show()
@@ -131,5 +139,5 @@ def main():
     return app.run()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())

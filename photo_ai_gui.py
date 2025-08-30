@@ -22,5 +22,5 @@ except ImportError as e:
     print("  pip install -e .")
     sys.exit(1)
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())
