@@ -35,6 +35,7 @@ setup(
         "numpy>=1.21.0",
         "scikit-learn>=1.0.0",
         "matplotlib>=3.5.0",
+        "PyQt6>=6.4.0",
     ],
     extras_require={
         "dev": [
@@ -43,10 +44,27 @@ setup(
             "flake8>=4.0",
             "mypy>=0.910",
         ],
+        "build": [
+            "briefcase>=0.3.15",
+            "pyinstaller>=5.0",
+            "auto-py-to-exe>=2.20.0",
+        ],
+        "all": [
+            "pytest>=6.0",
+            "black>=22.0",
+            "flake8>=4.0",
+            "mypy>=0.910",
+            "briefcase>=0.3.15",
+            "pyinstaller>=5.0",
+            "auto-py-to-exe>=2.20.0",
+        ],
     },
     entry_points={
         "console_scripts": [
             "photo-ai=photo_ai.cli.main:main",
+        ],
+        "gui_scripts": [
+            "photo-ai-gui=photo_ai.gui.app:main",
         ],
     },
 )

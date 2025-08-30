@@ -1,0 +1,176 @@
+name: Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    # Run tests daily at 2 AM UTC
+    - cron: '0 2 * * *'
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: [3.8, 3.9, "3.10", "3.11"]
+        exclude:
+          # Reduce matrix size for faster CI
+          - os: windows-latest
+            python-version: 3.8
+          - os: macos-latest
+            python-version: 3.8
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Install system dependencies (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libgtk-3-dev libgl1-mesa-dev xvfb
+    
+    - name: Install system dependencies (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        # Install any macOS-specific dependencies here
+        echo "macOS system dependencies installed"
+    
+    - name: Cache pip packages
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/setup.py', '**/pyproject.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev]"
+    
+    - name: Run linting
+      run: |
+        python -m flake8 photo_ai/ --count --select=E9,F63,F7,F82 --show-source --statistics
+        python -m flake8 photo_ai/ --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+        python -m black --check photo_ai/ || echo "Black formatting needed"
+    
+    - name: Run tests with coverage
+      run: |
+        python -m pytest tests/ -v --cov=photo_ai --cov-report=xml --cov-report=term-missing
+      env:
+        DISPLAY: :99.0
+    
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false
+
+  gui-test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.10"
+    
+    - name: Install system dependencies (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libgtk-3-dev libgl1-mesa-dev xvfb
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev]"
+    
+    - name: Test GUI imports
+      run: |
+        python -c "from photo_ai.gui.app import PhotoAIApp; print('GUI imports successful')"
+      env:
+        DISPLAY: :99.0
+    
+    - name: Test CLI functionality
+      run: |
+        python -m photo_ai.cli.main --help
+        python photo_ai_gui.py --help || echo "GUI help not available (expected for some platforms)"
+
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.10"
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev]"
+        pip install bandit safety
+    
+    - name: Run security scan with bandit
+      run: |
+        bandit -r photo_ai/ -f json -o bandit-report.json || true
+        bandit -r photo_ai/ || true
+    
+    - name: Check dependencies with safety
+      run: |
+        safety check --json --output safety-report.json || true
+        safety check || true
+    
+    - name: Upload security reports
+      uses: actions/upload-artifact@v3
+      with:
+        name: security-reports
+        path: |
+          bandit-report.json
+          safety-report.json
+        retention-days: 30
+
+  code-quality:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.10"
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev]"
+    
+    - name: Run mypy type checking
+      run: |
+        python -m mypy photo_ai/ --ignore-missing-imports || echo "Type checking completed with warnings"
+    
+    - name: Check code formatting
+      run: |
+        python -m black --check --diff photo_ai/
+    
+    - name: Run additional linting
+      run: |
+        python -m flake8 photo_ai/ --max-line-length=100 --extend-ignore=E203,W503

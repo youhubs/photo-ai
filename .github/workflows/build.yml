@@ -1,0 +1,224 @@
+name: Build Photo AI
+
+on:
+  push:
+    branches: [ main, develop ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.8, 3.9, "3.10", "3.11"]
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libgtk-3-dev libgl1-mesa-dev xvfb
+    
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev]"
+    
+    - name: Run linting
+      run: |
+        python -m flake8 photo_ai/
+        python -m black --check photo_ai/
+    
+    - name: Run tests
+      run: |
+        python -m pytest tests/ -v
+      env:
+        DISPLAY: :99
+        
+  build-windows:
+    needs: test
+    runs-on: windows-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.10"
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[build]"
+    
+    - name: Build with PyInstaller
+      run: |
+        python scripts/build.py pyinstaller --clean
+    
+    - name: Upload Windows executable
+      uses: actions/upload-artifact@v3
+      with:
+        name: photo-ai-windows
+        path: dist/PhotoAI.exe
+        retention-days: 30
+
+  build-macos:
+    needs: test
+    runs-on: macos-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.10"
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[build]"
+    
+    - name: Build with PyInstaller
+      run: |
+        python scripts/build.py pyinstaller --clean
+    
+    - name: Create DMG (if app bundle exists)
+      run: |
+        if [ -d "dist/Photo AI.app" ]; then
+          hdiutil create -srcfolder dist/ -volname "Photo AI" PhotoAI.dmg
+        fi
+    
+    - name: Upload macOS app
+      uses: actions/upload-artifact@v3
+      with:
+        name: photo-ai-macos
+        path: |
+          dist/Photo AI.app
+          PhotoAI.dmg
+        retention-days: 30
+
+  build-linux:
+    needs: test
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.10"
+    
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libgtk-3-dev libgl1-mesa-dev
+    
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[build]"
+    
+    - name: Build with PyInstaller
+      run: |
+        python scripts/build.py pyinstaller --clean
+      env:
+        DISPLAY: :99
+    
+    - name: Upload Linux executable
+      uses: actions/upload-artifact@v3
+      with:
+        name: photo-ai-linux
+        path: dist/PhotoAI
+        retention-days: 30
+
+  build-briefcase:
+    needs: test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.10"
+    
+    - name: Install system dependencies (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev
+    
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[build]"
+    
+    - name: Build with Briefcase
+      run: |
+        python scripts/build.py briefcase --clean
+      env:
+        DISPLAY: :99
+    
+    - name: Upload Briefcase artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: photo-ai-briefcase-${{ runner.os }}
+        path: |
+          dist/
+          build/
+        retention-days: 30
+
+  release:
+    needs: [build-windows, build-macos, build-linux]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Download all artifacts
+      uses: actions/download-artifact@v3
+    
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          photo-ai-windows/PhotoAI.exe
+          photo-ai-macos/Photo AI.app
+          photo-ai-macos/PhotoAI.dmg
+          photo-ai-linux/PhotoAI
+        body: |
+          ## Photo AI Release ${{ github.ref_name }}
+          
+          ### Desktop Applications
+          - **Windows**: PhotoAI.exe - Standalone executable
+          - **macOS**: Photo AI.app - App bundle, PhotoAI.dmg - Disk image
+          - **Linux**: PhotoAI - Standalone executable
+          
+          ### Installation
+          1. Download the appropriate file for your platform
+          2. Run the application directly (no installation required)
+          3. For first-time use, models will be downloaded automatically (~2GB)
+          
+          ### Changes
+          See CHANGELOG.md for detailed changes in this release.
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

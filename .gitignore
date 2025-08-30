@@ -75,9 +75,9 @@ __pypackages__/
 .env.development.local
 .env.test.local
 .env.production.local
-.venv
-env/
+.venv/
 venv/
+env/
 ENV/
 env.bak/
 venv.bak/

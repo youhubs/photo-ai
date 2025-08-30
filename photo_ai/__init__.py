@@ -8,9 +8,24 @@ from .processors.quality.sharpness import SharpnessAnalyzer
 from .processors.face.detector import FaceDetector
 from .processors.background.remover import BackgroundRemover
 
-__all__ = [
-    "PhotoProcessor",
-    "SharpnessAnalyzer", 
-    "FaceDetector",
-    "BackgroundRemover"
-]
+# GUI components (optional import)
+try:
+    from .gui.app import PhotoAIApp
+    from .gui.main_window import PhotoAIMainWindow
+    GUI_AVAILABLE = True
+    __all__ = [
+        "PhotoProcessor",
+        "SharpnessAnalyzer", 
+        "FaceDetector",
+        "BackgroundRemover",
+        "PhotoAIApp",
+        "PhotoAIMainWindow"
+    ]
+except ImportError:
+    GUI_AVAILABLE = False
+    __all__ = [
+        "PhotoProcessor",
+        "SharpnessAnalyzer", 
+        "FaceDetector",
+        "BackgroundRemover"
+    ]
