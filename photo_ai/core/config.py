@@ -38,6 +38,12 @@ class ProcessingConfig:
     )
     jersey_number_confidence_threshold: float = 0.6  # Minimum confidence for OCR number detection
 
+    # Performance optimization settings
+    use_parallel_processing: bool = False  # Enable parallel processing for faster performance (disabled by default due to thread safety issues with face_recognition)
+    max_worker_threads: int = 4  # Maximum number of worker threads for parallel processing
+    fast_mode: bool = True  # Use faster algorithms with slight accuracy trade-off
+    batch_size: int = 10  # Process photos in batches to optimize memory usage
+
 
 @dataclass
 class VisaConfig:

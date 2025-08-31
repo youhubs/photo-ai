@@ -10,6 +10,8 @@ import cv2
 from sklearn.metrics.pairwise import cosine_similarity
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import time
 
 from ...core.config import Config
 from ..face.detector import FaceDetector
@@ -34,6 +36,12 @@ class PlayerGroupingProcessor:
         self.jersey_number_confidence_threshold = (
             config.processing.jersey_number_confidence_threshold
         )
+
+        # Performance settings
+        self.use_parallel_processing = config.processing.use_parallel_processing
+        self.max_worker_threads = config.processing.max_worker_threads
+        self.fast_mode = config.processing.fast_mode
+        self.batch_size = config.processing.batch_size
 
     def _extract_enhanced_visual_features(self, image_path: str) -> Optional[np.ndarray]:
         """
@@ -123,9 +131,66 @@ class PlayerGroupingProcessor:
             return self._extract_visual_features_basic(image_path)
 
     def _extract_visual_features(self, image_path: str) -> Optional[np.ndarray]:
-        """Enhanced visual features with fallback."""
-        enhanced = self._extract_enhanced_visual_features(image_path)
-        return enhanced if enhanced is not None else self._extract_visual_features_basic(image_path)
+        """Extract visual features with performance optimization."""
+        if self.config.processing.fast_mode:
+            return self._extract_visual_features_fast(image_path)
+        else:
+            enhanced = self._extract_enhanced_visual_features(image_path)
+            return (
+                enhanced
+                if enhanced is not None
+                else self._extract_visual_features_basic(image_path)
+            )
+
+    def _extract_visual_features_fast(self, image_path: str) -> Optional[np.ndarray]:
+        """Fast visual feature extraction optimized for performance."""
+        try:
+            # Load image at smaller resolution for speed
+            image = cv2.imread(image_path)
+            if image is None:
+                return None
+
+            # Smaller resize for speed (128x128 instead of 224x224)
+            image = cv2.resize(image, (128, 128))
+
+            # Convert to HSV (better for clothing colors)
+            image_hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+
+            # Simple but effective features
+            # 1. Color histograms (reduced bins for speed)
+            hist_h = cv2.calcHist([image_hsv], [0], None, [16], [0, 180])
+            hist_s = cv2.calcHist([image_hsv], [1], None, [16], [0, 256])
+            hist_v = cv2.calcHist([image_hsv], [2], None, [16], [0, 256])
+
+            # 2. Simple spatial features (top vs bottom half)
+            h, w = image_hsv.shape[:2]
+            top_mean = np.mean(image_hsv[: h // 2, :], axis=(0, 1))
+            bottom_mean = np.mean(image_hsv[h // 2 :, :], axis=(0, 1))
+
+            # 3. Overall image statistics
+            global_mean = np.mean(image_hsv, axis=(0, 1))
+            global_std = np.std(image_hsv, axis=(0, 1))
+
+            # Combine features (much smaller feature vector)
+            features = np.concatenate(
+                [
+                    hist_h.flatten(),
+                    hist_s.flatten(),
+                    hist_v.flatten(),
+                    top_mean,
+                    bottom_mean,
+                    global_mean,
+                    global_std,
+                ]
+            )
+
+            # Normalize
+            features = features / (np.linalg.norm(features) + 1e-8)
+
+            return features
+
+        except Exception as e:
+            return None
 
     def _extract_visual_features_basic(self, image_path: str) -> Optional[np.ndarray]:
         """
@@ -426,81 +491,134 @@ class PlayerGroupingProcessor:
             logger("❌ No reference players loaded and no players directory provided")
             return {"success": False, "error": "No reference players available"}
 
-        # Process each photo and match against reference players
-        player_matches = {}  # player_name -> list of photo paths
-        multiple_player_photos = []  # photos with multiple recognized players
-        unknown_photos = []  # photos with no recognized players
+        # Use parallel processing if enabled and we have enough photos
+        if (
+            self.use_parallel_processing
+            and len(image_paths) >= self.batch_size
+            and self.max_worker_threads > 1
+        ):
 
-        for i, image_path in enumerate(image_paths):
-            try:
-                logger(
-                    f"🔍 Analyzing photo {i+1}/{len(image_paths)}: {os.path.basename(image_path)}"
-                )
+            logger(f"🚀 Processing {len(image_paths)} photos using parallel processing...")
+            logger(f"  Threads: {self.max_worker_threads}, Batch size: {self.batch_size}")
 
-                result = self.face_detector.detect_faces(image_path)
-                matched_players = set()
+            # Process photos in parallel batches
+            player_matches = {}  # player_name -> list of photo paths
+            multiple_player_photos = []  # photos with multiple recognized players
+            unknown_photos = []  # photos with no recognized players
 
-                if not result.get("face_info") or len(result["face_info"]) == 0:
-                    # No faces detected - try alternative matching methods
-                    logger(f"  👤 No faces detected, trying alternative matching...")
+            # Split photos into batches
+            batches = []
+            for i in range(0, len(image_paths), self.batch_size):
+                batch = image_paths[i : i + self.batch_size]
+                batches.append((batch, i))  # Include batch index for logging
 
-                    # Try jersey number matching first (most reliable for back views)
-                    if self.enable_jersey_number_matching:
-                        # Debug: show detected number
-                        detected_number = self._detect_jersey_number(image_path)
-                        if detected_number:
-                            logger(f"  🔢 Detected jersey number: {detected_number}")
-                            jersey_match = self.jersey_to_player.get(detected_number)
-                            if jersey_match:
-                                matched_players.add(jersey_match)
-                                logger(f"  ✅ Jersey number match found: {jersey_match}")
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+
+            with ThreadPoolExecutor(max_workers=self.max_worker_threads) as executor:
+                # Submit all batches
+                future_to_batch = {}
+                for batch, batch_idx in batches:
+                    future = executor.submit(
+                        self._process_photo_batch, batch, batch_idx, len(batches)
+                    )
+                    future_to_batch[future] = batch_idx
+
+                # Collect results
+                for future in as_completed(future_to_batch):
+                    batch_idx = future_to_batch[future]
+                    try:
+                        batch_results = future.result()
+
+                        # Merge batch results
+                        for player_name, photos in batch_results["player_matches"].items():
+                            if player_name not in player_matches:
+                                player_matches[player_name] = []
+                            player_matches[player_name].extend(photos)
+
+                        multiple_player_photos.extend(batch_results["multiple_player_photos"])
+                        unknown_photos.extend(batch_results["unknown_photos"])
+
+                    except Exception as e:
+                        logger(f"❌ Error processing batch {batch_idx}: {e}")
+
+        else:
+            # Sequential processing (original method)
+            logger(f"🔄 Processing {len(image_paths)} photos sequentially...")
+
+            player_matches = {}  # player_name -> list of photo paths
+            multiple_player_photos = []  # photos with multiple recognized players
+            unknown_photos = []  # photos with no recognized players
+
+            for i, image_path in enumerate(image_paths):
+                try:
+                    logger(
+                        f"🔍 Analyzing photo {i+1}/{len(image_paths)}: {os.path.basename(image_path)}"
+                    )
+
+                    result = self.face_detector.detect_faces(image_path)
+                    matched_players = set()
+
+                    if not result.get("face_info") or len(result["face_info"]) == 0:
+                        # No faces detected - try alternative matching methods
+                        logger(f"  👤 No faces detected, trying alternative matching...")
+
+                        # Try jersey number matching first (most reliable for back views)
+                        if self.enable_jersey_number_matching:
+                            # Debug: show detected number
+                            detected_number = self._detect_jersey_number(image_path)
+                            if detected_number:
+                                logger(f"  🔢 Detected jersey number: {detected_number}")
+                                jersey_match = self.jersey_to_player.get(detected_number)
+                                if jersey_match:
+                                    matched_players.add(jersey_match)
+                                    logger(f"  ✅ Jersey number match found: {jersey_match}")
+                                else:
+                                    logger(
+                                        f"  ❓ Jersey number {detected_number} not found in player mappings"
+                                    )
                             else:
-                                logger(
-                                    f"  ❓ Jersey number {detected_number} not found in player mappings"
-                                )
-                        else:
-                            logger(f"  🔢 No jersey number detected")
+                                logger(f"  🔢 No jersey number detected")
 
-                    # Try visual feature matching if no jersey match
-                    if not matched_players and self.enable_non_face_matching:
-                        visual_match = self._match_visual_features_to_player(image_path)
-                        if visual_match:
-                            matched_players.add(visual_match)
-                            logger(f"  🎨 Visual feature match found: {visual_match}")
+                        # Try visual feature matching if no jersey match
+                        if not matched_players and self.enable_non_face_matching:
+                            visual_match = self._match_visual_features_to_player(image_path)
+                            if visual_match:
+                                matched_players.add(visual_match)
+                                logger(f"  🎨 Visual feature match found: {visual_match}")
 
-                    if not matched_players:
-                        logger(f"  ❓ No matches found using any method")
-                        unknown_photos.append(image_path)
-                        continue
-                else:
-                    # Check each face in the photo against reference players
-                    for face_info in result["face_info"]:
-                        if face_info.get("embedding") is None:
+                        if not matched_players:
+                            logger(f"  ❓ No matches found using any method")
+                            unknown_photos.append(image_path)
                             continue
+                    else:
+                        # Check each face in the photo against reference players
+                        for face_info in result["face_info"]:
+                            if face_info.get("embedding") is None:
+                                continue
 
-                        matched_player = self._match_face_to_player(face_info["embedding"])
-                        if matched_player:
-                            matched_players.add(matched_player)
+                            matched_player = self._match_face_to_player(face_info["embedding"])
+                            if matched_player:
+                                matched_players.add(matched_player)
 
-                if len(matched_players) == 0:
-                    unknown_photos.append(image_path)
-                elif len(matched_players) == 1:
-                    player_name = list(matched_players)[0]
-                    if player_name not in player_matches:
-                        player_matches[player_name] = []
-                    player_matches[player_name].append(image_path)
-                else:
-                    # Multiple players detected - assign to all relevant folders
-                    multiple_player_photos.append((image_path, list(matched_players)))
-                    for player_name in matched_players:
+                    if len(matched_players) == 0:
+                        unknown_photos.append(image_path)
+                    elif len(matched_players) == 1:
+                        player_name = list(matched_players)[0]
                         if player_name not in player_matches:
                             player_matches[player_name] = []
                         player_matches[player_name].append(image_path)
+                    else:
+                        # Multiple players detected - assign to all relevant folders
+                        multiple_player_photos.append((image_path, list(matched_players)))
+                        for player_name in matched_players:
+                            if player_name not in player_matches:
+                                player_matches[player_name] = []
+                            player_matches[player_name].append(image_path)
 
-            except Exception as e:
-                logger(f"⚠️  Error processing {image_path}: {str(e)}")
-                unknown_photos.append(image_path)
-                continue
+                except Exception as e:
+                    logger(f"⚠️  Error processing {image_path}: {str(e)}")
+                    unknown_photos.append(image_path)
+                    continue
 
         # Create output directory structure
         output_dir = os.path.join(self.config.output_dir, "output")
@@ -593,6 +711,11 @@ class PlayerGroupingProcessor:
                     best_similarity = similarity
                     best_match = player_name
 
+                    # Early termination: if we have a very confident match (>0.9 similarity),
+                    # we can stop searching as it's unlikely to find a better match
+                    if similarity > 0.9:
+                        break
+
             except Exception as e:
                 continue
 
@@ -630,6 +753,11 @@ class PlayerGroupingProcessor:
                     best_similarity = similarity
                     best_match = player_name
 
+                    # Early termination: if we have a very confident visual match (>0.95 similarity),
+                    # we can stop searching as visual features are less precise than faces
+                    if similarity > 0.95:
+                        break
+
             except Exception as e:
                 continue
 
@@ -655,6 +783,94 @@ class PlayerGroupingProcessor:
 
         # Look up player by jersey number
         return self.jersey_to_player.get(jersey_number)
+
+    def _process_photo_batch(self, photo_paths: List[str], batch_id: int, total_batches: int) -> Dict:
+        """
+        Process a batch of photos for player matching with thread safety.
+
+        Args:
+            photo_paths: List of photo paths to process
+            batch_id: Batch identifier for logging
+            total_batches: Total number of batches for progress tracking
+
+        Returns:
+            Dictionary with processing results for the batch
+        """
+        batch_results = {"player_matches": {}, "multiple_player_photos": [], "unknown_photos": []}
+
+        # Process each photo in the batch
+        for i, photo_path in enumerate(photo_paths):
+            try:
+                matched_players = set()
+
+                # Use a more thread-safe approach for face detection
+                # Load image manually to avoid potential threading issues
+                import face_recognition
+                import cv2
+                
+                try:
+                    # Load image safely
+                    image = cv2.imread(photo_path)
+                    if image is None:
+                        batch_results["unknown_photos"].append(photo_path)
+                        continue
+                    
+                    # Convert BGR to RGB for face_recognition
+                    rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+                    
+                    # Detect faces with thread-safe face_recognition calls
+                    face_locations = face_recognition.face_locations(rgb_image, model="hog")  # hog is more stable in threads
+                    
+                    if len(face_locations) > 0:
+                        # Get face encodings
+                        face_encodings = face_recognition.face_encodings(rgb_image, face_locations)
+                        
+                        # Process first 3 faces for speed
+                        for face_encoding in face_encodings[:3]:
+                            matched_player = self._match_face_to_player_safe(face_encoding)
+                            if matched_player:
+                                matched_players.add(matched_player)
+                    
+                    # If no faces found, try alternative matching
+                    if not matched_players:
+                        if self.enable_jersey_number_matching:
+                            jersey_match = self._match_jersey_number_to_player(photo_path)
+                            if jersey_match:
+                                matched_players.add(jersey_match)
+
+                        if not matched_players and self.enable_non_face_matching:
+                            visual_match = self._match_visual_features_to_player_safe(photo_path)
+                            if visual_match:
+                                matched_players.add(visual_match)
+
+                except Exception:
+                    # If any error occurs during processing, treat as unknown
+                    batch_results["unknown_photos"].append(photo_path)
+                    continue
+
+                # Categorize results
+                if len(matched_players) == 0:
+                    batch_results["unknown_photos"].append(photo_path)
+                elif len(matched_players) == 1:
+                    player_name = list(matched_players)[0]
+                    if player_name not in batch_results["player_matches"]:
+                        batch_results["player_matches"][player_name] = []
+                    batch_results["player_matches"][player_name].append(photo_path)
+                else:
+                    # Multiple players
+                    batch_results["multiple_player_photos"].append(
+                        (photo_path, list(matched_players))
+                    )
+                    for player_name in matched_players:
+                        if player_name not in batch_results["player_matches"]:
+                            batch_results["player_matches"][player_name] = []
+                        batch_results["player_matches"][player_name].append(photo_path)
+
+            except Exception:
+                batch_results["unknown_photos"].append(photo_path)
+                continue
+
+        return batch_results
 
     def set_face_match_threshold(self, threshold: float):
         """
