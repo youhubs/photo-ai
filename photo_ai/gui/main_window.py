@@ -84,6 +84,12 @@ class PhotoAIMainWindow(QMainWindow):
         self.setup_ui()
         self.setup_connections()
 
+        # Initialize UI for default batch mode
+        self.update_ui_for_batch_mode()
+
+        # Ensure buttons are in correct initial state
+        self.update_selection_display()
+
     def setup_ui(self):
         """Setup the main user interface."""
         self.setWindowTitle("Photo AI - Intelligent Photo Processing")
@@ -159,14 +165,18 @@ class PhotoAIMainWindow(QMainWindow):
         self.selection_group = QGroupBox("Photo Selection")
         selection_layout = QVBoxLayout(self.selection_group)
 
-        self.select_folder_btn = QPushButton("📁 Select Photo Folder")
-        self.select_folder_btn.setMinimumHeight(50)
-        self.select_folder_btn.setToolTip("Select a folder containing photos to process")
+        self.select_folder_btn = QPushButton("📁 Select Sports Photo Folder")
+        self.select_folder_btn.setMinimumHeight(60)
+        self.select_folder_btn.setToolTip(
+            "Select a folder containing sports photos for batch processing"
+        )
         selection_layout.addWidget(self.select_folder_btn)
 
+        # Keep individual file selection but hide it in batch mode
         self.select_files_btn = QPushButton("🖼️ Select Individual Photos")
         self.select_files_btn.setMinimumHeight(50)
         self.select_files_btn.setToolTip("Select specific photo files to process")
+        self.select_files_btn.setVisible(False)  # Hidden in batch mode
         selection_layout.addWidget(self.select_files_btn)
 
         self.select_single_btn = QPushButton("🖼️ Select Portrait Photo")
@@ -187,53 +197,68 @@ class PhotoAIMainWindow(QMainWindow):
         # Processing options
         self.processing_group = QGroupBox("Processing Options")
         processing_layout = QVBoxLayout(self.processing_group)
+        processing_layout.setSpacing(8)  # Consistent spacing between items
+        processing_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         # Step-by-step processing buttons (always visible)
         self.step1_btn = QPushButton("1️⃣ Quality Analysis")
-        self.step1_btn.setMinimumHeight(40)
+        self.step1_btn.setMinimumHeight(45)
+        self.step1_btn.setMaximumHeight(45)
         self.step1_btn.setEnabled(False)
         self.step1_btn.setToolTip("Analyze photo sharpness and quality")
+        self.step1_btn.setStyleSheet("QPushButton { text-align: left; padding-left: 10px; }")
         processing_layout.addWidget(self.step1_btn)
 
         self.step2_btn = QPushButton("2️⃣ Duplicate Detection")
-        self.step2_btn.setMinimumHeight(40)
+        self.step2_btn.setMinimumHeight(45)
+        self.step2_btn.setMaximumHeight(45)
         self.step2_btn.setEnabled(False)
         self.step2_btn.setToolTip("Find and group duplicate/similar photos")
+        self.step2_btn.setStyleSheet("QPushButton { text-align: left; padding-left: 10px; }")
         processing_layout.addWidget(self.step2_btn)
 
         self.step3_btn = QPushButton("3️⃣ Best Photo Selection")
-        self.step3_btn.setMinimumHeight(40)
+        self.step3_btn.setMinimumHeight(45)
+        self.step3_btn.setMaximumHeight(45)
         self.step3_btn.setEnabled(False)
         self.step3_btn.setToolTip("Select best photos from each group")
+        self.step3_btn.setStyleSheet("QPushButton { text-align: left; padding-left: 10px; }")
         processing_layout.addWidget(self.step3_btn)
 
         self.step4_btn = QPushButton("4️⃣ Player Grouping")
-        self.step4_btn.setMinimumHeight(40)
+        self.step4_btn.setMinimumHeight(45)
+        self.step4_btn.setMaximumHeight(45)
         self.step4_btn.setEnabled(False)
         self.step4_btn.setToolTip("Group photos by detected players")
+        self.step4_btn.setStyleSheet("QPushButton { text-align: left; padding-left: 10px; }")
         processing_layout.addWidget(self.step4_btn)
 
         # Cancel button (initially hidden)
         self.cancel_btn = QPushButton("❌ Cancel Processing")
-        self.cancel_btn.setMinimumHeight(35)
+        self.cancel_btn.setMinimumHeight(40)
+        self.cancel_btn.setMaximumHeight(40)
         self.cancel_btn.setVisible(False)
         self.cancel_btn.setToolTip("Cancel the current processing step")
         self.cancel_btn.setStyleSheet(
-            "QPushButton { background-color: #ff4444; color: white; font-weight: bold; }"
+            "QPushButton { background-color: #ff4444; color: white; font-weight: bold; text-align: left; padding-left: 10px; }"
         )
         processing_layout.addWidget(self.cancel_btn)
 
         # Single mode buttons (initially hidden)
         self.visa_btn = QPushButton("📄 Create Visa Photo")
         self.visa_btn.setMinimumHeight(50)
+        self.visa_btn.setMaximumHeight(50)
         self.visa_btn.setToolTip("Create a visa/passport photo from selected image")
         self.visa_btn.setVisible(False)
+        self.visa_btn.setStyleSheet("QPushButton { text-align: left; padding-left: 10px; }")
         processing_layout.addWidget(self.visa_btn)
 
         self.enhance_btn = QPushButton("✨ Enhance Portrait")
-        self.enhance_btn.setMinimumHeight(40)
+        self.enhance_btn.setMinimumHeight(45)
+        self.enhance_btn.setMaximumHeight(45)
         self.enhance_btn.setToolTip("Enhance the selected portrait photo")
         self.enhance_btn.setVisible(False)
+        self.enhance_btn.setStyleSheet("QPushButton { text-align: left; padding-left: 10px; }")
         processing_layout.addWidget(self.enhance_btn)
 
         layout.addWidget(self.processing_group)
@@ -306,13 +331,17 @@ class PhotoAIMainWindow(QMainWindow):
         help_menu.addAction("About", self.show_about)
 
     def setup_connections(self):
+        print("Setting up signal connections...")  # Debug
+
         # Mode switching
         self.mode_button_group.idClicked.connect(self.on_mode_changed)
 
         # Photo selection
+        print("Connecting folder button...")  # Debug
         self.select_folder_btn.clicked.connect(self.select_folder)
         self.select_files_btn.clicked.connect(self.select_files)
         self.select_single_btn.clicked.connect(self.select_single_photo)
+        print("Photo selection buttons connected")  # Debug
 
         # Processing actions - direct step execution
         self.step1_btn.clicked.connect(lambda: self.execute_step("quality"))
@@ -344,6 +373,10 @@ class PhotoAIMainWindow(QMainWindow):
         self.selected_files = []
         self.update_selection_display()
 
+        # Update button states if switching to single mode
+        if mode_id == 1:  # Single mode
+            self.update_single_mode_buttons()
+
     def update_ui_for_batch_mode(self):
         """Update UI elements for batch processing mode."""
         # Update group titles
@@ -352,8 +385,13 @@ class PhotoAIMainWindow(QMainWindow):
 
         # Show/hide appropriate buttons
         self.select_folder_btn.setVisible(True)
-        self.select_files_btn.setVisible(True)
+        self.select_folder_btn.setEnabled(True)  # Ensure it's enabled
+        self.select_files_btn.setVisible(False)  # Hidden in batch mode as requested
         self.select_single_btn.setVisible(False)
+
+        print(
+            f"Batch mode - folder button visible: {self.select_folder_btn.isVisible()}, enabled: {self.select_folder_btn.isEnabled()}"
+        )  # Debug
 
         # Show step buttons directly
         self.step1_btn.setVisible(True)
@@ -403,20 +441,42 @@ class PhotoAIMainWindow(QMainWindow):
         self.enhance_btn.setVisible(True)
 
         self.selected_path_label.setText("No portrait photo selected")
+        self.update_single_mode_buttons()
+
+    def update_single_mode_buttons(self):
+        """Update single mode button text and state based on photo selection."""
+        if self.current_mode == "single":
+            if self.selected_files:
+                # Photo is selected - show action-oriented text
+                self.visa_btn.setText("📄 Create Visa Photo")
+                self.enhance_btn.setText("✨ Enhance Portrait")
+                self.visa_btn.setEnabled(True)
+                self.enhance_btn.setEnabled(True)
+            else:
+                # No photo selected - show instructional text
+                self.visa_btn.setText("📄 Create Visa Photo (select photo first)")
+                self.enhance_btn.setText("✨ Enhance Portrait (select photo first)")
+                self.visa_btn.setEnabled(False)
+                self.enhance_btn.setEnabled(False)
 
     def select_single_photo(self):
         """Select a single photo for visa/portrait processing."""
-        file, _ = QFileDialog.getOpenFileName(
-            self,
-            "Select Portrait Photo",
-            "",
-            "Image Files (*.jpg *.jpeg *.png *.bmp *.tiff *.webp);;All Files (*)",
-        )
-        if file:
-            self.selected_files = [file]
-            self.selected_folder = None
-            self.update_selection_display()
-            self.load_photos_preview_async()
+        try:
+            file, _ = QFileDialog.getOpenFileName(
+                self,
+                "Select Portrait Photo",
+                "",
+                "Image Files (*.jpg *.jpeg *.png *.bmp *.tiff *.webp);;All Files (*)",
+            )
+            if file:
+                self.selected_files = [file]
+                self.selected_folder = None
+                self.update_selection_display()
+                self.load_photos_preview_async()
+                self.update_single_mode_buttons()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to select photo: {str(e)}")
+            print(f"Photo selection error: {e}")  # Debug output
 
     def execute_step(self, step_name: str):
         """Execute a specific processing step."""
@@ -671,28 +731,53 @@ class PhotoAIMainWindow(QMainWindow):
         )
 
     def select_folder(self):
-        folder = QFileDialog.getExistingDirectory(
-            self, "Select Photo Folder", "", QFileDialog.Option.ShowDirsOnly
-        )
-        if folder:
-            self.selected_folder = folder
-            self.selected_files = []
-            self.update_selection_display()
-            # Use async loading for better performance
-            self.load_photos_preview_async()
+        print("select_folder() called")  # Debug
+        try:
+            print("Opening folder dialog...")  # Debug
+
+            # Try different approaches for macOS compatibility
+            dialog = QFileDialog(self)
+            dialog.setFileMode(QFileDialog.FileMode.Directory)
+            dialog.setOption(QFileDialog.Option.ShowDirsOnly, True)
+            dialog.setWindowTitle("Select Photo Folder")
+
+            if dialog.exec():
+                folders = dialog.selectedFiles()
+                if folders:
+                    folder = folders[0]
+                    print(f"Folder selected via dialog: {folder}")  # Debug
+                    self.selected_folder = folder
+                    self.selected_files = []
+                    self.update_selection_display()
+                    # Use async loading for better performance
+                    self.load_photos_preview_async()
+                else:
+                    print("No folders in selection")  # Debug
+            else:
+                print("Dialog cancelled")  # Debug
+
+        except Exception as e:
+            error_msg = f"Failed to select folder: {str(e)}"
+            print(f"Folder selection error: {e}")  # Debug output
+            print(f"Error type: {type(e)}")  # Debug
+            QMessageBox.critical(self, "Error", error_msg)
 
     def select_files(self):
-        files, _ = QFileDialog.getOpenFileNames(
-            self,
-            "Select Photo Files",
-            "",
-            "Image Files (*.jpg *.jpeg *.png *.bmp *.tiff *.webp);;All Files (*)",
-        )
-        if files:
-            self.selected_files = files
-            self.selected_folder = None
-            self.update_selection_display()
-            self.load_photos_preview_async()
+        try:
+            files, _ = QFileDialog.getOpenFileNames(
+                self,
+                "Select Photo Files",
+                "",
+                "Image Files (*.jpg *.jpeg *.png *.bmp *.tiff *.webp);;All Files (*)",
+            )
+            if files:
+                self.selected_files = files
+                self.selected_folder = None
+                self.update_selection_display()
+                self.load_photos_preview_async()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to select files: {str(e)}")
+            print(f"File selection error: {e}")  # Debug output
 
     def update_selection_display(self):
         if self.selected_folder:
@@ -814,7 +899,22 @@ class PhotoAIMainWindow(QMainWindow):
         self.photo_viewer.load_photos(photos)
 
     def open_visa_dialog(self):
-        dialog = VisaPhotoDialog(self.processor, self)
+        # Check if a photo is already selected in single mode
+        if self.current_mode == "single" and self.selected_files:
+            # Use the already selected photo
+            input_photo = self.selected_files[0]
+            dialog = VisaPhotoDialog(self.processor, self, input_photo)
+        else:
+            # No photo selected, let the dialog handle selection
+            if self.current_mode == "single":
+                QMessageBox.information(
+                    self,
+                    "No Photo Selected",
+                    "Please select a portrait photo first using the 'Select Portrait Photo' button above.",
+                )
+                return
+            dialog = VisaPhotoDialog(self.processor, self)
+
         dialog.exec()
 
     def open_settings(self):

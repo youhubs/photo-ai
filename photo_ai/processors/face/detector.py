@@ -1,5 +1,6 @@
 """Face detection and analysis."""
 
+import os
 import cv2
 import numpy as np
 from typing import Dict, List, Optional, Tuple
@@ -18,15 +19,100 @@ class FaceDetector:
     def detect_faces(self, image_path: str) -> Dict:
         """Detect all faces in an image."""
         try:
-            image = face_recognition.load_image_file(image_path)
-            face_locations = face_recognition.face_locations(image)
+            # Check if file exists and is valid
+            if not os.path.exists(image_path):
+                return {
+                    "image_path": image_path,
+                    "error": "File not found",
+                    "has_faces": False,
+                    "face_count": 0,
+                    "face_info": [],
+                }
+
+            # Load image with error handling
+            try:
+                image = face_recognition.load_image_file(image_path)
+                if image is None or image.size == 0:
+                    return {
+                        "image_path": image_path,
+                        "error": "Invalid image file",
+                        "has_faces": False,
+                        "face_count": 0,
+                        "face_info": [],
+                    }
+            except Exception as load_error:
+                return {
+                    "image_path": image_path,
+                    "error": f"Failed to load image: {str(load_error)}",
+                    "has_faces": False,
+                    "face_count": 0,
+                    "face_info": [],
+                }
+
+            # Detect face locations
+            try:
+                face_locations = face_recognition.face_locations(
+                    image, model="hog"
+                )  # Use faster HOG model
+            except Exception as detection_error:
+                return {
+                    "image_path": image_path,
+                    "error": f"Face detection failed: {str(detection_error)}",
+                    "has_faces": False,
+                    "face_count": 0,
+                    "face_info": [],
+                }
 
             if not face_locations:
-                return {"image_path": image_path, "face_count": 0, "faces": [], "has_faces": False}
+                return {
+                    "image_path": image_path,
+                    "face_count": 0,
+                    "faces": [],
+                    "has_faces": False,
+                    "face_info": [],
+                }
 
             faces = []
-            for i, (top, right, bottom, left) in enumerate(face_locations):
-                face_info = {
+            face_info = []  # For compatibility with player grouping
+
+            # Compute face encodings/embeddings with error handling
+            try:
+                face_encodings = face_recognition.face_encodings(
+                    image, face_locations, model="small"
+                )  # Use faster small model
+            except Exception as encoding_error:
+                # If encoding fails, still return face locations without embeddings
+                for i, (top, right, bottom, left) in enumerate(face_locations):
+                    face_data = {
+                        "id": i,
+                        "box": (top, right, bottom, left),
+                        "width": right - left,
+                        "height": bottom - top,
+                        "area": (right - left) * (bottom - top),
+                        "center_x": (left + right) // 2,
+                        "center_y": (top + bottom) // 2,
+                        "embedding": None,  # No embedding due to error
+                        "confidence": 0.5,  # Lower confidence without encoding
+                    }
+                    faces.append(face_data)
+                    face_info.append(face_data)
+
+                largest_face = max(faces, key=lambda f: f["area"]) if faces else None
+                return {
+                    "image_path": image_path,
+                    "face_count": len(faces),
+                    "faces": faces,
+                    "face_info": face_info,
+                    "largest_face": largest_face,
+                    "has_faces": len(faces) > 0,
+                    "image_shape": image.shape,
+                    "encoding_error": str(encoding_error),
+                }
+
+            for i, ((top, right, bottom, left), encoding) in enumerate(
+                zip(face_locations, face_encodings)
+            ):
+                face_data = {
                     "id": i,
                     "box": (top, right, bottom, left),
                     "width": right - left,
@@ -34,8 +120,11 @@ class FaceDetector:
                     "area": (right - left) * (bottom - top),
                     "center_x": (left + right) // 2,
                     "center_y": (top + bottom) // 2,
+                    "embedding": encoding,  # Add embedding for player grouping
+                    "confidence": 0.8,  # Default confidence for face_recognition library
                 }
-                faces.append(face_info)
+                faces.append(face_data)
+                face_info.append(face_data)  # For compatibility
 
             # Find largest face
             largest_face = max(faces, key=lambda f: f["area"]) if faces else None
@@ -44,12 +133,19 @@ class FaceDetector:
                 "image_path": image_path,
                 "face_count": len(faces),
                 "faces": faces,
+                "face_info": face_info,  # For player grouping compatibility
                 "largest_face": largest_face,
                 "has_faces": len(faces) > 0,
                 "image_shape": image.shape,
             }
         except Exception as e:
-            return {"image_path": image_path, "error": str(e), "has_faces": False, "face_count": 0}
+            return {
+                "image_path": image_path,
+                "error": str(e),
+                "has_faces": False,
+                "face_count": 0,
+                "face_info": [],
+            }
 
     def detect_with_margin(self, image_path: str, margin_ratio: float = 0.25) -> Dict:
         """Detect faces with safety margins."""

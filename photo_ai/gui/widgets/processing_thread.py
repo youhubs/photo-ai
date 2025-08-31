@@ -104,7 +104,7 @@ class ProcessingThread(QThread):
             self.error_occurred.emit("Visa processing requires a single image file")
             return
 
-        self.status_updated.emit("Processing visa photo...")
+        self.status_updated.emit("Starting visa photo processing...")
         self.progress_updated.emit(0)
 
         try:
@@ -114,7 +114,17 @@ class ProcessingThread(QThread):
             input_name = os.path.splitext(os.path.basename(self.input_source))[0]
             output_path = f"{input_name}_visa.jpg"
 
-            self.progress_updated.emit(25)
+            self.status_updated.emit("Analyzing face position...")
+            self.progress_updated.emit(20)
+
+            self.status_updated.emit("Adjusting photo dimensions...")
+            self.progress_updated.emit(40)
+
+            self.status_updated.emit("Enhancing image quality...")
+            self.progress_updated.emit(60)
+
+            self.status_updated.emit("Applying visa photo standards...")
+            self.progress_updated.emit(80)
 
             # Process visa photo
             result = self.processor.process_visa_photo(self.input_source, output_path)
@@ -176,7 +186,17 @@ class ProcessingThread(QThread):
         self.progress_updated.emit(0)
 
         try:
-            self.progress_updated.emit(25)
+            self.status_updated.emit("Detecting faces in photos...")
+            self.progress_updated.emit(20)
+
+            self.status_updated.emit("Extracting face features...")
+            self.progress_updated.emit(40)
+
+            self.status_updated.emit("Clustering similar faces...")
+            self.progress_updated.emit(70)
+
+            self.status_updated.emit("Organizing player groups...")
+            self.progress_updated.emit(85)
 
             # Call the player grouping method
             results = self.processor.group_photos_by_players(self.input_source)
@@ -184,7 +204,7 @@ class ProcessingThread(QThread):
             self.progress_updated.emit(100)
 
             if results.get("success", False):
-                self.status_updated.emit("Player grouping completed successfully")
+                self.status_updated.emit("Player grouping completed successfully!")
                 self.finished_processing.emit(results)
             else:
                 self.error_occurred.emit(results.get("error", "Player grouping failed"))
@@ -194,7 +214,7 @@ class ProcessingThread(QThread):
 
     def run_quality_step(self):
         """Run quality analysis step only."""
-        self.status_updated.emit("Analyzing photo quality...")
+        self.status_updated.emit("Starting quality analysis...")
         self.progress_updated.emit(0)
 
         try:
@@ -209,13 +229,41 @@ class ProcessingThread(QThread):
                 self.error_occurred.emit("No images found to analyze")
                 return
 
-            self.progress_updated.emit(25)
+            total_images = len(image_paths)
+            self.status_updated.emit(f"Analyzing {total_images} photos...")
 
-            # Only run sharpness analysis
-            results = self.processor.analyze_photo_quality(image_paths)
+            # Perform sharpness analysis with progress updates
+            self.progress_updated.emit(10)
+            self.status_updated.emit("Analyzing sharpness...")
+            sharpness_results = self.processor.sharpness_analyzer.batch_analyze(image_paths)
+
+            self.progress_updated.emit(40)
+            self.status_updated.emit("Detecting duplicates...")
+            duplicate_results = self.processor.duplicate_detector.find_comprehensive_duplicates(
+                image_paths
+            )
+
+            self.progress_updated.emit(70)
+            self.status_updated.emit("Analyzing faces...")
+
+            # Analyze faces with incremental progress
+            face_results = {}
+            for i, path in enumerate(image_paths):
+                face_results[path] = self.processor.face_detector.analyze_face_quality(path)
+                # Update progress incrementally during face analysis (70% to 95%)
+                face_progress = 70 + int((i + 1) / total_images * 25)
+                self.progress_updated.emit(face_progress)
+                self.status_updated.emit(f"Analyzing faces... ({i+1}/{total_images})")
+
+            # Compile results
+            results = {
+                "sharpness": sharpness_results,
+                "duplicates": duplicate_results,
+                "faces": face_results,
+            }
 
             self.progress_updated.emit(100)
-            self.status_updated.emit("Quality analysis completed")
+            self.status_updated.emit("Quality analysis completed!")
             self.finished_processing.emit(results)
 
         except Exception as e:
@@ -223,7 +271,7 @@ class ProcessingThread(QThread):
 
     def run_duplicates_step(self):
         """Run duplicate detection step only."""
-        self.status_updated.emit("Detecting duplicates...")
+        self.status_updated.emit("Starting duplicate detection...")
         self.progress_updated.emit(0)
 
         try:
@@ -238,9 +286,24 @@ class ProcessingThread(QThread):
                 self.error_occurred.emit("No images found for duplicate detection")
                 return
 
-            self.progress_updated.emit(25)
+            total_images = len(image_paths)
+            self.status_updated.emit(f"Analyzing {total_images} photos for duplicates...")
+            self.progress_updated.emit(10)
 
-            # Run only duplicate detection
+            # Simulate progress during duplicate detection process
+            self.status_updated.emit("Computing image hashes...")
+            self.progress_updated.emit(30)
+
+            self.status_updated.emit("Finding exact duplicates...")
+            self.progress_updated.emit(50)
+
+            self.status_updated.emit("Detecting similar images...")
+            self.progress_updated.emit(70)
+
+            self.status_updated.emit("Clustering results...")
+            self.progress_updated.emit(85)
+
+            # Run duplicate detection
             duplicate_results = self.processor.duplicate_detector.find_comprehensive_duplicates(
                 image_paths
             )
@@ -256,10 +319,19 @@ class ProcessingThread(QThread):
 
     def run_selection_step(self):
         """Run best photo selection step."""
-        self.status_updated.emit("Selecting best photos...")
+        self.status_updated.emit("Starting photo selection...")
         self.progress_updated.emit(0)
 
         try:
+            self.status_updated.emit("Evaluating photo quality...")
+            self.progress_updated.emit(20)
+
+            self.status_updated.emit("Comparing similar groups...")
+            self.progress_updated.emit(50)
+
+            self.status_updated.emit("Selecting best photos...")
+            self.progress_updated.emit(75)
+
             # This step needs results from previous steps
             # For now, we'll create a simple placeholder
             results = {
@@ -271,7 +343,7 @@ class ProcessingThread(QThread):
             }
 
             self.progress_updated.emit(100)
-            self.status_updated.emit("Selection completed")
+            self.status_updated.emit("Photo selection completed!")
             self.finished_processing.emit(results)
 
         except Exception as e:

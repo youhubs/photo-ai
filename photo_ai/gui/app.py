@@ -4,7 +4,7 @@ import sys
 from typing import Optional
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QIcon, QPalette, QColor
+from PyQt6.QtGui import QIcon, QPalette, QColor, QFont, QFontDatabase
 
 from .main_window import PhotoAIMainWindow
 
@@ -22,11 +22,41 @@ class PhotoAIApp(QApplication):
         # Set application properties
         self.setQuitOnLastWindowClosed(True)
 
+        # Configure fonts to avoid warnings
+        self.setup_fonts()
+
         # Apply modern dark theme
         self.apply_dark_theme()
 
         # Create main window
         self.main_window = PhotoAIMainWindow()
+
+    def setup_fonts(self):
+        """Setup fonts to avoid Qt font warnings."""
+        # Get available monospace fonts
+        monospace_families = [
+            "Monaco",
+            "Courier New",
+            "Consolas",
+            "DejaVu Sans Mono",
+            "Liberation Mono",
+            "Courier",
+        ]
+
+        # Find the first available monospace font
+        available_fonts = QFontDatabase.families()
+        monospace_font = None
+        for font_family in monospace_families:
+            if font_family in available_fonts:
+                monospace_font = font_family
+                break
+
+        # Set default monospace font if we found one
+        if monospace_font:
+            font = QFont(monospace_font)
+            font.setStyleHint(QFont.StyleHint.Monospace)
+            QApplication.setFont(font, "QTextEdit")
+            QApplication.setFont(font, "QPlainTextEdit")
 
     def apply_dark_theme(self):
         """Apply a modern dark theme to the application."""

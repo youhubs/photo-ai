@@ -31,15 +31,22 @@ from ..widgets.processing_thread import ProcessingThread
 class VisaPhotoDialog(QDialog):
     """Dialog for creating visa/passport photos."""
 
-    def __init__(self, processor: PhotoProcessor, parent=None):
+    def __init__(self, processor: PhotoProcessor, parent=None, input_photo: Optional[str] = None):
         super().__init__(parent)
         self.processor = processor
-        self.input_file: Optional[str] = None
+        self.input_file: Optional[str] = input_photo
         self.output_file: Optional[str] = None
         self.processing_thread: Optional[ProcessingThread] = None
 
         self.setup_ui()
         self.setup_connections()
+
+        # If input photo is provided, update UI accordingly
+        if self.input_file:
+            filename = os.path.basename(self.input_file)
+            self.input_file_label.setText(f"Selected: {filename}")
+            self.process_btn.setEnabled(True)
+            self.load_preview()
 
     def setup_ui(self):
         """Setup the dialog UI."""
