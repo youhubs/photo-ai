@@ -25,6 +25,9 @@ class ProcessingConfig:
     sharpness_threshold: float = 0.7
     num_best_photos: int = 2
 
+    # Player recognition settings
+    face_match_threshold: float = 0.6  # Threshold for matching faces to reference players
+
 
 @dataclass
 class VisaConfig:

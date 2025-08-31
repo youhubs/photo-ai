@@ -1248,16 +1248,16 @@ class PhotoAIMainWindow(QMainWindow):
                     <span style='color: #d0d7de; font-weight: bold;'>{results.get('total_photos', 0)}</span>
                 </div>
                 <div style='display: flex; justify-content: space-between; margin: 8px 0;'>
-                    <span style='color: #51cf66;'>Photos with Faces:</span>
-                    <span style='color: #d0d7de; font-weight: bold;'>{results.get('photos_with_faces', 0)}</span>
+                    <span style='color: #51cf66;'>Recognized Players:</span>
+                    <span style='color: #d0d7de; font-weight: bold;'>{results.get('recognized_players', results.get('player_groups', 0))}</span>
                 </div>
                 <div style='display: flex; justify-content: space-between; margin: 8px 0;'>
-                    <span style='color: #ffd43b;'>Player Groups Created:</span>
-                    <span style='color: #d0d7de; font-weight: bold;'>{results.get('player_groups', 0)}</span>
+                    <span style='color: #ffd43b;'>Multiple Player Photos:</span>
+                    <span style='color: #d0d7de; font-weight: bold;'>{results.get('photos_with_multiple_players', 0)}</span>
                 </div>
                 <div style='display: flex; justify-content: space-between; margin: 8px 0;'>
-                    <span style='color: #ff8cc8;'>Ungrouped Photos:</span>
-                    <span style='color: #d0d7de; font-weight: bold;'>{results.get('ungrouped_photos', 0)}</span>
+                    <span style='color: #ff8cc8;'>Unknown Photos:</span>
+                    <span style='color: #d0d7de; font-weight: bold;'>{results.get('unknown_photos', results.get('ungrouped_photos', 0))}</span>
                 </div>
             </div>
         """
@@ -1269,12 +1269,22 @@ class PhotoAIMainWindow(QMainWindow):
                 <h4 style='margin: 0 0 10px 0; color: #74c0fc; font-size: 14px;'>👤 Individual Player Groups</h4>
             """
 
-            for group_id, stats in results["group_stats"].items():
-                confidence_pct = stats["avg_confidence"] * 100
+            for player_name, stats in results["group_stats"].items():
+                # Handle both old format (with avg_confidence) and new format (player names)
+                if "avg_confidence" in stats:
+                    # Old clustering format
+                    confidence_pct = stats["avg_confidence"] * 100
+                    display_name = f"Player {player_name}"
+                    confidence_text = f" (confidence: {confidence_pct:.1f}%)"
+                else:
+                    # New reference-based format
+                    display_name = player_name
+                    confidence_text = ""
+
                 html += f"""
                 <div style='display: flex; justify-content: space-between; margin: 8px 0; padding: 5px; background: #1a1a1a; border-radius: 4px;'>
-                    <span style='color: #74c0fc;'>Player {group_id}:</span>
-                    <span style='color: #d0d7de;'>{stats['photo_count']} photos (confidence: {confidence_pct:.1f}%)</span>
+                    <span style='color: #74c0fc;'>{display_name}:</span>
+                    <span style='color: #d0d7de;'>{stats['photo_count']} photos{confidence_text}</span>
                 </div>
                 """
 

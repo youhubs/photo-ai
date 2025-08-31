@@ -388,8 +388,19 @@ class PhotoProcessor:
 
         return results
 
-    def group_photos_by_players(self, input_source: Optional[str] = None) -> Dict:
-        """Group photos by detected players using face clustering."""
+    def group_photos_by_players(
+        self, input_source: Optional[str] = None, players_dir: Optional[str] = None
+    ) -> Dict:
+        """
+        Group photos by detected players using reference player matching.
+
+        Args:
+            input_source: Directory containing sports photos to process, or list of photo paths
+            players_dir: Directory containing reference player photos (e.g., 'players/Messi.jpg', 'players/Ronaldo.jpg')
+
+        Returns:
+            Dictionary with grouping results and statistics
+        """
         # Handle both folder path and file list
         if isinstance(input_source, str) and os.path.isdir(input_source):
             image_paths = get_image_paths(input_source)
@@ -405,14 +416,59 @@ class PhotoProcessor:
             self.log("⚠️ No images found for player grouping")
             return {"success": False, "error": "No images found"}
 
-        self.log(f"👥 Grouping {len(image_paths)} photos by players...")
+        # Default players directory if not specified
+        if players_dir is None:
+            players_dir = os.path.join(input_dir, "players")
+            if not os.path.exists(players_dir):
+                # Try looking for players folder in current working directory
+                players_dir = "players"
+
+        if not os.path.exists(players_dir):
+            self.log(f"❌ Players directory not found: {players_dir}")
+            self.log(
+                "💡 Please create a 'players/' directory with reference photos (e.g., Messi.jpg, Ronaldo.jpg)"
+            )
+            return {"success": False, "error": f"Players directory not found: {players_dir}"}
+
+        if not os.path.isdir(players_dir):
+            self.log(f"❌ Players path exists but is not a directory: {players_dir}")
+            self.log("💡 Please ensure 'players/' is a directory, not a file")
+            return {"success": False, "error": f"Players path is not a directory: {players_dir}"}
+
+        self.log(
+            f"👥 Grouping {len(image_paths)} photos by players using references from {players_dir}..."
+        )
 
         try:
-            result = self.player_grouping.group_photos_by_players(image_paths, self.log)
+            result = self.player_grouping.group_photos_by_players(
+                image_paths, players_dir, self.log
+            )
             if result.get("success"):
-                self.log(f"✅ Player grouping completed! Created {result['player_groups']} groups")
+                self.log(
+                    f"✅ Player grouping completed! Recognized {result['recognized_players']} players"
+                )
+                if result.get("photos_with_multiple_players", 0) > 0:
+                    self.log(
+                        f"👥 Found {result['photos_with_multiple_players']} photos with multiple players"
+                    )
+                if result.get("unknown_photos", 0) > 0:
+                    self.log(f"❓ {result['unknown_photos']} photos moved to 'unknown' folder")
             return result
         except Exception as e:
             error_msg = f"Player grouping failed: {str(e)}"
             self.log(f"❌ {error_msg}")
             return {"success": False, "error": error_msg}
+
+    def set_face_match_threshold(self, threshold: float):
+        """
+        Set the face matching threshold for player recognition.
+
+        Args:
+            threshold: Threshold value (0.0 to 1.0, higher = stricter matching)
+        """
+        self.player_grouping.set_face_match_threshold(threshold)
+        self.log(f"🎯 Face matching threshold set to {threshold}")
+
+    def get_loaded_players(self) -> List[str]:
+        """Get list of currently loaded reference players."""
+        return self.player_grouping.get_reference_players()

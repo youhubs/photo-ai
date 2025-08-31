@@ -1,29 +1,94 @@
-"""Player-based photo grouping for sports photos."""
+"""Player-based photo grouping for sports photos with reference player matching."""
 
 import os
 import shutil
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 import numpy as np
+import face_recognition
+from pathlib import Path
 
 from ...core.config import Config
 from ..face.detector import FaceDetector
 
 
 class PlayerGroupingProcessor:
-    """Groups sports photos by detected players using face recognition."""
+    """Groups sports photos by detected players using reference player photos."""
 
     def __init__(self, config: Config):
         self.config = config
         self.face_detector = FaceDetector(config)
+        self.reference_players = {}  # Will store player_name -> encoding mapping
+        self.face_match_threshold = config.processing.face_match_threshold
+
+    def load_reference_players(self, players_dir: str, logger: Optional[callable] = None) -> bool:
+        """
+        Load reference player photos from players/ directory.
+
+        Args:
+            players_dir: Path to directory containing player reference photos
+            logger: Optional logging function
+
+        Returns:
+            True if players loaded successfully
+        """
+        if logger is None:
+            logger = print
+
+        if not os.path.exists(players_dir):
+            logger(f"❌ Players directory not found: {players_dir}")
+            return False
+
+        if not os.path.isdir(players_dir):
+            logger(f"❌ Players path exists but is not a directory: {players_dir}")
+            return False
+
+        self.reference_players = {}
+        supported_extensions = (".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".webp")
+
+        player_files = [
+            f for f in os.listdir(players_dir) if f.lower().endswith(supported_extensions)
+        ]
+
+        if not player_files:
+            logger(f"❌ No player reference photos found in {players_dir}")
+            return False
+
+        logger(f"📂 Loading reference players from {players_dir}...")
+
+        for player_file in player_files:
+            try:
+                player_path = os.path.join(players_dir, player_file)
+                player_name = os.path.splitext(player_file)[0]
+
+                # Load and encode the reference photo
+                image = face_recognition.load_image_file(player_path)
+                face_encodings = face_recognition.face_encodings(image)
+
+                if len(face_encodings) == 0:
+                    logger(f"⚠️  No face found in {player_file}")
+                    continue
+                elif len(face_encodings) > 1:
+                    logger(f"⚠️  Multiple faces found in {player_file}, using first one")
+
+                self.reference_players[player_name] = face_encodings[0]
+                logger(f"✅ Loaded reference for player: {player_name}")
+
+            except Exception as e:
+                logger(f"⚠️  Error loading {player_file}: {str(e)}")
+                continue
+
+        logger(f"🎯 Loaded {len(self.reference_players)} player references")
+        return len(self.reference_players) > 0
 
     def group_photos_by_players(
-        self, image_paths: List[str], logger: Optional[callable] = None
+        self, image_paths: List[str], players_dir: str = None, logger: Optional[callable] = None
     ) -> Dict:
         """
-        Group photos by detected players using face clustering.
+        Group photos by detected players using reference player matching.
 
         Args:
             image_paths: List of paths to sport photos
+            players_dir: Path to directory containing reference player photos
             logger: Optional logging function
 
         Returns:
@@ -34,209 +99,161 @@ class PlayerGroupingProcessor:
 
         logger("🏃‍♂️ Starting player-based photo grouping...")
 
-        # Extract face embeddings from all photos
-        face_data = []
-        valid_photos = []
+        # Load reference players if directory provided
+        if players_dir:
+            if not self.load_reference_players(players_dir, logger):
+                logger("❌ Failed to load reference players")
+                return {"success": False, "error": "Failed to load reference players"}
+        elif not self.reference_players:
+            logger("❌ No reference players loaded and no players directory provided")
+            return {"success": False, "error": "No reference players available"}
+
+        # Process each photo and match against reference players
+        player_matches = {}  # player_name -> list of photo paths
+        multiple_player_photos = []  # photos with multiple recognized players
+        unknown_photos = []  # photos with no recognized players
 
         for i, image_path in enumerate(image_paths):
             try:
                 logger(
-                    f"🔍 Analyzing faces in photo {i+1}/{len(image_paths)}: {os.path.basename(image_path)}"
+                    f"🔍 Analyzing photo {i+1}/{len(image_paths)}: {os.path.basename(image_path)}"
                 )
 
                 result = self.face_detector.detect_faces(image_path)
-                if result.get("face_info") and len(result["face_info"]) > 0:
-                    # For sports photos, we typically want the main/largest face
-                    main_face = max(result["face_info"], key=lambda x: x.get("confidence", 0))
+                if not result.get("face_info") or len(result["face_info"]) == 0:
+                    unknown_photos.append(image_path)
+                    continue
 
-                    if main_face.get("embedding") is not None:
-                        face_data.append(
-                            {
-                                "image_path": image_path,
-                                "embedding": main_face["embedding"],
-                                "confidence": main_face.get("confidence", 0),
-                                "face_count": len(result["face_info"]),
-                            }
-                        )
-                        valid_photos.append(image_path)
+                # Check each face in the photo against reference players
+                matched_players = set()
+                for face_info in result["face_info"]:
+                    if face_info.get("embedding") is None:
+                        continue
+
+                    matched_player = self._match_face_to_player(face_info["embedding"])
+                    if matched_player:
+                        matched_players.add(matched_player)
+
+                if len(matched_players) == 0:
+                    unknown_photos.append(image_path)
+                elif len(matched_players) == 1:
+                    player_name = list(matched_players)[0]
+                    if player_name not in player_matches:
+                        player_matches[player_name] = []
+                    player_matches[player_name].append(image_path)
+                else:
+                    # Multiple players detected - assign to all relevant folders
+                    multiple_player_photos.append((image_path, list(matched_players)))
+                    for player_name in matched_players:
+                        if player_name not in player_matches:
+                            player_matches[player_name] = []
+                        player_matches[player_name].append(image_path)
 
             except Exception as e:
                 logger(f"⚠️  Error processing {image_path}: {str(e)}")
+                unknown_photos.append(image_path)
                 continue
 
-        if len(face_data) < 2:
-            logger("❌ Not enough faces detected for meaningful grouping")
-            return {
-                "success": False,
-                "error": "Not enough faces detected for grouping",
-                "photos_with_faces": len(face_data),
-                "total_photos": len(image_paths),
-            }
-
-        logger(f"✅ Found faces in {len(face_data)}/{len(image_paths)} photos")
-
-        # Cluster faces by similarity
-        player_groups = self._cluster_faces(face_data, logger)
-
         # Create output directory structure
-        groups_output_dir = os.path.join(self.config.output_dir, "player_groups")
-        os.makedirs(groups_output_dir, exist_ok=True)
+        output_dir = os.path.join(self.config.output_dir, "output")
+        os.makedirs(output_dir, exist_ok=True)
 
         # Copy photos to player-specific folders
         group_stats = {}
-        for group_id, group_photos in player_groups.items():
-            group_dir = os.path.join(groups_output_dir, f"player_{group_id:02d}")
-            os.makedirs(group_dir, exist_ok=True)
+        for player_name, photo_paths in player_matches.items():
+            player_dir = os.path.join(output_dir, player_name)
+            os.makedirs(player_dir, exist_ok=True)
 
             copied_count = 0
-            for photo_info in group_photos:
-                try:
-                    src_path = photo_info["image_path"]
-                    filename = os.path.basename(src_path)
-                    dst_path = os.path.join(group_dir, filename)
-                    shutil.copy2(src_path, dst_path)
-                    copied_count += 1
-                except Exception as e:
-                    logger(f"⚠️  Error copying {src_path}: {str(e)}")
-
-            group_stats[group_id] = {
-                "photo_count": copied_count,
-                "avg_confidence": np.mean([p["confidence"] for p in group_photos]),
-                "folder_path": group_dir,
-            }
-
-            logger(
-                f"👤 Player {group_id}: {copied_count} photos (avg confidence: {group_stats[group_id]['avg_confidence']:.2f})"
-            )
-
-        # Handle ungrouped photos (no clear face detected)
-        ungrouped_photos = [p for p in image_paths if p not in valid_photos]
-        if ungrouped_photos:
-            ungrouped_dir = os.path.join(groups_output_dir, "ungrouped")
-            os.makedirs(ungrouped_dir, exist_ok=True)
-
-            for photo_path in ungrouped_photos:
+            for photo_path in photo_paths:
                 try:
                     filename = os.path.basename(photo_path)
-                    dst_path = os.path.join(ungrouped_dir, filename)
+                    dst_path = os.path.join(player_dir, filename)
+                    shutil.copy2(photo_path, dst_path)
+                    copied_count += 1
+                except Exception as e:
+                    logger(f"⚠️  Error copying {photo_path}: {str(e)}")
+
+            group_stats[player_name] = {
+                "photo_count": copied_count,
+                "folder_path": player_dir,
+            }
+            logger(f"👤 {player_name}: {copied_count} photos")
+
+        # Handle unknown photos
+        if unknown_photos:
+            unknown_dir = os.path.join(output_dir, "unknown")
+            os.makedirs(unknown_dir, exist_ok=True)
+
+            for photo_path in unknown_photos:
+                try:
+                    filename = os.path.basename(photo_path)
+                    dst_path = os.path.join(unknown_dir, filename)
                     shutil.copy2(photo_path, dst_path)
                 except Exception as e:
-                    logger(f"⚠️  Error copying ungrouped photo {photo_path}: {str(e)}")
+                    logger(f"⚠️  Error copying unknown photo {photo_path}: {str(e)}")
 
-        logger(f"🎯 Grouping completed! Created {len(player_groups)} player groups")
+            logger(f"❓ Unknown: {len(unknown_photos)} photos")
+
+        # Log multiple player detections
+        if multiple_player_photos:
+            logger(f"👥 Found {len(multiple_player_photos)} photos with multiple players")
+
+        logger(
+            f"🎯 Grouping completed! Created {len(player_matches)} player groups + unknown group"
+        )
 
         return {
             "success": True,
             "total_photos": len(image_paths),
-            "photos_with_faces": len(face_data),
-            "player_groups": len(player_groups),
-            "ungrouped_photos": len(ungrouped_photos),
+            "recognized_players": len(player_matches),
+            "photos_with_multiple_players": len(multiple_player_photos),
+            "unknown_photos": len(unknown_photos),
             "group_stats": group_stats,
-            "output_directory": groups_output_dir,
+            "output_directory": output_dir,
+            "multiple_player_detections": multiple_player_photos,
         }
 
-    def _cluster_faces(self, face_data: List[Dict], logger: callable) -> Dict[int, List[Dict]]:
+    def _match_face_to_player(self, face_encoding: np.ndarray) -> Optional[str]:
         """
-        Cluster face embeddings using similarity threshold.
+        Match a face encoding to a reference player.
 
         Args:
-            face_data: List of face data with embeddings
-            logger: Logging function
+            face_encoding: Face encoding to match
 
         Returns:
-            Dictionary mapping group_id to list of photo info
+            Player name if match found, None otherwise
         """
-        logger("🔄 Clustering faces by similarity...")
+        if not self.reference_players or face_encoding is None:
+            return None
 
-        if not face_data:
-            return {}
+        # Compare against all reference players
+        for player_name, reference_encoding in self.reference_players.items():
+            try:
+                # Calculate face distance (lower = more similar)
+                distance = face_recognition.face_distance([reference_encoding], face_encoding)[0]
 
-        # Simple clustering based on cosine similarity
-        embeddings = np.array([item["embedding"] for item in face_data])
+                # Convert distance to similarity (higher = more similar)
+                # face_recognition.face_distance returns values where 0.6 is the typical threshold
+                similarity = 1.0 - distance
 
-        # Normalize embeddings
-        embeddings = embeddings / np.linalg.norm(embeddings, axis=1, keepdims=True)
+                if similarity >= self.face_match_threshold:
+                    return player_name
 
-        # Compute pairwise similarities
-        similarities = np.dot(embeddings, embeddings.T)
-
-        # Threshold for considering faces as same person (adjust as needed)
-        similarity_threshold = 0.6
-
-        # Simple clustering algorithm
-        groups = {}
-        assigned = set()
-        group_id = 0
-
-        for i, face_info in enumerate(face_data):
-            if i in assigned:
+            except Exception as e:
                 continue
 
-            # Start new group
-            current_group = [face_info]
-            assigned.add(i)
+        return None
 
-            # Find similar faces
-            for j, other_face_info in enumerate(face_data):
-                if j in assigned or j == i:
-                    continue
+    def set_face_match_threshold(self, threshold: float):
+        """
+        Update the face matching threshold.
 
-                if similarities[i, j] >= similarity_threshold:
-                    current_group.append(other_face_info)
-                    assigned.add(j)
+        Args:
+            threshold: New threshold value (0.0 to 1.0, higher = stricter matching)
+        """
+        self.face_match_threshold = max(0.0, min(1.0, threshold))
 
-            groups[group_id] = current_group
-            group_id += 1
-
-        # Merge small groups with confidence < 0.7 into larger ones if similar enough
-        merged_groups = self._merge_small_groups(groups, similarities, face_data, logger)
-
-        return merged_groups
-
-    def _merge_small_groups(
-        self, groups: Dict, similarities: np.ndarray, face_data: List[Dict], logger: callable
-    ) -> Dict[int, List[Dict]]:
-        """Merge small groups with larger ones if they're similar enough."""
-
-        # Find groups with < 3 photos and low average confidence
-        small_groups = []
-        large_groups = []
-
-        for group_id, group_photos in groups.items():
-            avg_confidence = np.mean([p["confidence"] for p in group_photos])
-
-            if len(group_photos) < 3 and avg_confidence < 0.7:
-                small_groups.append(group_id)
-            else:
-                large_groups.append(group_id)
-
-        # Try to merge small groups with large ones
-        merged_groups = {gid: groups[gid] for gid in large_groups}
-        next_group_id = max(large_groups) + 1 if large_groups else 0
-
-        for small_group_id in small_groups:
-            small_group = groups[small_group_id]
-            merged = False
-
-            # Try to merge with existing large groups
-            for large_group_id in large_groups:
-                # Check similarity between group representatives
-                small_embedding = small_group[0]["embedding"]
-                large_embedding = merged_groups[large_group_id][0]["embedding"]
-
-                # Normalize and compute similarity
-                small_norm = small_embedding / np.linalg.norm(small_embedding)
-                large_norm = large_embedding / np.linalg.norm(large_embedding)
-                similarity = np.dot(small_norm, large_norm)
-
-                if similarity >= 0.5:  # Lower threshold for merging
-                    merged_groups[large_group_id].extend(small_group)
-                    merged = True
-                    break
-
-            # If not merged, keep as separate group
-            if not merged:
-                merged_groups[next_group_id] = small_group
-                next_group_id += 1
-
-        return merged_groups
+    def get_reference_players(self) -> List[str]:
+        """Get list of loaded reference player names."""
+        return list(self.reference_players.keys())

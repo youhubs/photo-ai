@@ -17,6 +17,8 @@ def main():
         epilog="""
 Examples:
   photo-ai sports photos/                     # Process sports photos with enhancement
+  photo-ai players photos/                    # Group photos by players (requires players/ folder)
+  photo-ai players photos/ -p refs/           # Group using custom reference directory
   photo-ai process photos/                    # Process all photos in directory  
   photo-ai visa input.jpg output.jpg          # Create visa photo
   photo-ai analyze photos/                    # Analyze photo quality
@@ -71,6 +73,24 @@ Examples:
     sports_parser.add_argument("directory", help="Directory containing sports photos")
     sports_parser.add_argument(
         "--output", "-o", help="Output directory (default: input_dir/output)"
+    )
+
+    # Player grouping command
+    players_parser = subparsers.add_parser(
+        "players", help="Group sports photos by detected players using reference photos"
+    )
+    players_parser.add_argument("directory", help="Directory containing sports photos to group")
+    players_parser.add_argument(
+        "--players-dir",
+        "-p",
+        help="Directory containing reference player photos (default: directory/players)",
+    )
+    players_parser.add_argument(
+        "--threshold",
+        "-t",
+        type=float,
+        default=0.6,
+        help="Face matching threshold (0.0-1.0, higher = stricter matching, default: 0.6)",
     )
 
     # Stats command
@@ -149,6 +169,21 @@ Examples:
                 return 1
 
             _print_sports_results(result)
+
+        elif args.command == "players":
+            if not os.path.exists(args.directory):
+                print(f"Error: Directory not found: {args.directory}")
+                return 1
+
+            # Set custom threshold if provided
+            if hasattr(args, "threshold") and args.threshold != 0.6:
+                processor.set_face_match_threshold(args.threshold)
+
+            result = processor.group_photos_by_players(args.directory, args.players_dir)
+            if not result["success"]:
+                print(f"Error: {result['error']}")
+                return 1
+            _print_players_results(result)
 
         elif args.command == "stats":
             stats = processor.get_processing_stats()
@@ -293,6 +328,33 @@ def _print_stats(stats):
     for name, path in stats["directories"].items():
         exists = "✅" if os.path.exists(path) else "❌"
         print(f"  {name}: {path} {exists}")
+
+
+def _print_players_results(result):
+    """Print player grouping results."""
+    print("\\n=== Player Grouping Results ===")
+
+    print(f"📸 Total photos processed: {result['total_photos']}")
+    print(f"🏃‍♂️ Recognized players: {result['recognized_players']}")
+    print(f"❓ Unknown photos: {result['unknown_photos']}")
+
+    if result.get("photos_with_multiple_players", 0) > 0:
+        print(f"👥 Photos with multiple players: {result['photos_with_multiple_players']}")
+
+    print(f"\\n📁 Output directory: {result['output_directory']}")
+
+    # Print details for each player
+    if "group_stats" in result and result["group_stats"]:
+        print(f"\\n👤 Player Statistics:")
+        for player_name, stats in result["group_stats"].items():
+            print(f"  {player_name}: {stats['photo_count']} photos")
+
+    # Show multiple player detections if any
+    if result.get("multiple_player_detections"):
+        print(f"\\n👥 Photos with Multiple Players:")
+        for photo_path, players in result["multiple_player_detections"]:
+            photo_name = os.path.basename(photo_path)
+            print(f"  {photo_name}: {', '.join(players)}")
 
 
 if __name__ == "__main__":
