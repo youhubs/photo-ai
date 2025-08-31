@@ -26,7 +26,17 @@ class ProcessingConfig:
     num_best_photos: int = 2
 
     # Player recognition settings
-    face_match_threshold: float = 0.6  # Threshold for matching faces to reference players
+    face_match_threshold: float = (
+        0.5  # Threshold for matching faces to reference players (0.5 = more permissive for sports photos)
+    )
+    visual_similarity_threshold: float = (
+        0.7  # Threshold for matching non-face photos using visual features
+    )
+    enable_non_face_matching: bool = True  # Enable matching of photos without detectable faces
+    enable_jersey_number_matching: bool = (
+        False  # Enable jersey number detection and matching (OCR-based, works best with clear back view photos)
+    )
+    jersey_number_confidence_threshold: float = 0.6  # Minimum confidence for OCR number detection
 
 
 @dataclass

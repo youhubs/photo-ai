@@ -17,8 +17,13 @@ def main():
         epilog="""
 Examples:
   photo-ai sports photos/                     # Process sports photos with enhancement
-  photo-ai players photos/                    # Group photos by players (requires players/ folder)
+  photo-ai players photos/                    # Group photos by players (face + visual features)
   photo-ai players photos/ -p refs/           # Group using custom reference directory
+  photo-ai players photos/ -t 0.4             # Use looser face matching threshold
+  photo-ai players photos/ --visual-threshold 0.6  # More permissive visual matching
+  photo-ai players photos/ --no-visual-matching    # Only use face matching
+  photo-ai players photos/ --enable-jersey-matching  # Try jersey number OCR (for clear back views)
+  photo-ai players photos/ --jersey-numbers custom.json  # Custom jersey number mappings
   photo-ai process photos/                    # Process all photos in directory  
   photo-ai visa input.jpg output.jpg          # Create visa photo
   photo-ai analyze photos/                    # Analyze photo quality
@@ -89,8 +94,28 @@ Examples:
         "--threshold",
         "-t",
         type=float,
-        default=0.6,
-        help="Face matching threshold (0.0-1.0, higher = stricter matching, default: 0.6)",
+        default=0.5,
+        help="Face matching threshold (0.0-1.0, higher = stricter matching, default: 0.5)",
+    )
+    players_parser.add_argument(
+        "--visual-threshold",
+        type=float,
+        default=0.7,
+        help="Visual similarity threshold for non-face photos (0.0-1.0, default: 0.7)",
+    )
+    players_parser.add_argument(
+        "--no-visual-matching",
+        action="store_true",
+        help="Disable visual matching for photos without faces",
+    )
+    players_parser.add_argument(
+        "--enable-jersey-matching",
+        action="store_true",
+        help="Enable jersey number detection and matching (works best with clear back view photos)",
+    )
+    players_parser.add_argument(
+        "--jersey-numbers",
+        help="Path to JSON file with player jersey number mappings",
     )
 
     # Stats command
@@ -175,9 +200,18 @@ Examples:
                 print(f"Error: Directory not found: {args.directory}")
                 return 1
 
-            # Set custom threshold if provided
-            if hasattr(args, "threshold") and args.threshold != 0.6:
+            # Set custom thresholds if provided
+            if hasattr(args, "threshold") and args.threshold != 0.5:
                 processor.set_face_match_threshold(args.threshold)
+
+            if hasattr(args, "visual_threshold") and args.visual_threshold != 0.7:
+                processor.set_visual_similarity_threshold(args.visual_threshold)
+
+            if hasattr(args, "no_visual_matching") and args.no_visual_matching:
+                processor.enable_non_face_matching(False)
+
+            if hasattr(args, "enable_jersey_matching") and args.enable_jersey_matching:
+                processor.enable_jersey_number_matching(True)
 
             result = processor.group_photos_by_players(args.directory, args.players_dir)
             if not result["success"]:

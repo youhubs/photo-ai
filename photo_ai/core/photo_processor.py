@@ -469,6 +469,46 @@ class PhotoProcessor:
         self.player_grouping.set_face_match_threshold(threshold)
         self.log(f"🎯 Face matching threshold set to {threshold}")
 
+    def set_visual_similarity_threshold(self, threshold: float):
+        """
+        Set the visual similarity threshold for non-face photo matching.
+
+        Args:
+            threshold: Threshold value (0.0 to 1.0, higher = stricter matching)
+        """
+        self.player_grouping.set_visual_similarity_threshold(threshold)
+        self.log(f"🎨 Visual similarity threshold set to {threshold}")
+
+    def enable_non_face_matching(self, enabled: bool = True):
+        """
+        Enable or disable matching of photos without detectable faces (back views, etc.).
+
+        Args:
+            enabled: Whether to enable non-face matching
+        """
+        self.player_grouping.enable_disable_non_face_matching(enabled)
+        status = "enabled" if enabled else "disabled"
+        self.log(f"👤 Non-face matching {status}")
+
     def get_loaded_players(self) -> List[str]:
         """Get list of currently loaded reference players."""
         return self.player_grouping.get_reference_players()
+
+    def get_visual_reference_players(self) -> List[str]:
+        """Get list of players with visual feature references."""
+        return self.player_grouping.get_visual_reference_players()
+
+    def enable_jersey_number_matching(self, enabled: bool = True):
+        """
+        Enable or disable jersey number detection and matching.
+
+        Args:
+            enabled: Whether to enable jersey number matching
+        """
+        self.player_grouping.enable_jersey_number_matching = enabled
+        status = "enabled" if enabled else "disabled"
+        self.log(f"🔢 Jersey number matching {status}")
+
+    def get_jersey_number_mappings(self) -> Dict[str, int]:
+        """Get current player jersey number mappings."""
+        return self.player_grouping.player_jersey_numbers.copy()

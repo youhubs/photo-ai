@@ -6,6 +6,10 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import face_recognition
 from pathlib import Path
+import cv2
+from sklearn.metrics.pairwise import cosine_similarity
+import json
+import re
 
 from ...core.config import Config
 from ..face.detector import FaceDetector
@@ -18,7 +22,298 @@ class PlayerGroupingProcessor:
         self.config = config
         self.face_detector = FaceDetector(config)
         self.reference_players = {}  # Will store player_name -> encoding mapping
+        self.reference_visual_features = (
+            {}
+        )  # Will store player_name -> visual features for non-face photos
+        self.player_jersey_numbers = {}  # Will store player_name -> jersey_number mapping
+        self.jersey_to_player = {}  # Will store jersey_number -> player_name mapping
         self.face_match_threshold = config.processing.face_match_threshold
+        self.visual_similarity_threshold = config.processing.visual_similarity_threshold
+        self.enable_non_face_matching = config.processing.enable_non_face_matching
+        self.enable_jersey_number_matching = config.processing.enable_jersey_number_matching
+        self.jersey_number_confidence_threshold = (
+            config.processing.jersey_number_confidence_threshold
+        )
+
+    def _extract_enhanced_visual_features(self, image_path: str) -> Optional[np.ndarray]:
+        """
+        Extract enhanced visual features optimized for sports player recognition.
+
+        Args:
+            image_path: Path to the image file
+
+        Returns:
+            Enhanced feature vector or None if extraction fails
+        """
+        try:
+            # Load image
+            image = cv2.imread(image_path)
+            if image is None:
+                return None
+
+            # Resize to standard size for consistent feature extraction
+            image = cv2.resize(image, (224, 224))
+
+            # Convert to different color spaces for richer features
+            image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            image_hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+
+            # 1. Enhanced color features (jersey colors, skin tone)
+            # RGB histograms
+            hist_r = cv2.calcHist([image_rgb], [0], None, [32], [0, 256])
+            hist_g = cv2.calcHist([image_rgb], [1], None, [32], [0, 256])
+            hist_b = cv2.calcHist([image_rgb], [2], None, [32], [0, 256])
+
+            # HSV histograms (better for jersey color recognition)
+            hist_h = cv2.calcHist([image_hsv], [0], None, [32], [0, 180])
+            hist_s = cv2.calcHist([image_hsv], [1], None, [32], [0, 256])
+            hist_v = cv2.calcHist([image_hsv], [2], None, [32], [0, 256])
+
+            # 2. Body shape and posture features
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+            # Edge detection for body outline
+            edges = cv2.Canny(gray, 50, 150)
+            edge_hist = np.histogram(edges, bins=16)[0]
+
+            # 3. Spatial color distribution (where colors appear in the image)
+            # Top half vs bottom half color differences (jersey vs shorts)
+            h, w = image_rgb.shape[:2]
+            top_half = image_rgb[: h // 2, :]
+            bottom_half = image_rgb[h // 2 :, :]
+
+            top_mean = np.mean(top_half.reshape(-1, 3), axis=0)
+            bottom_mean = np.mean(bottom_half.reshape(-1, 3), axis=0)
+            color_spatial = np.concatenate([top_mean, bottom_mean])
+
+            # 4. Texture features optimized for fabric/clothing
+            # LBP (Local Binary Patterns) for fabric texture
+            from sklearn.feature_extraction import image as sk_image
+
+            patches = sk_image.extract_patches_2d(gray, (16, 16), max_patches=50)
+            texture_features = np.mean([np.std(patch) for patch in patches])
+
+            # Combine all features
+            color_features = np.concatenate(
+                [
+                    hist_r.flatten(),
+                    hist_g.flatten(),
+                    hist_b.flatten(),
+                    hist_h.flatten(),
+                    hist_s.flatten(),
+                    hist_v.flatten(),
+                ]
+            )
+
+            shape_features = edge_hist.flatten()
+            spatial_features = color_spatial.flatten()
+
+            # Combine all features
+            features = np.concatenate(
+                [color_features, shape_features, spatial_features, [texture_features]]
+            )
+
+            # Normalize features
+            features = features / (np.linalg.norm(features) + 1e-8)
+
+            return features
+
+        except Exception as e:
+            # Fallback to original method
+            return self._extract_visual_features_basic(image_path)
+
+    def _extract_visual_features(self, image_path: str) -> Optional[np.ndarray]:
+        """Enhanced visual features with fallback."""
+        enhanced = self._extract_enhanced_visual_features(image_path)
+        return enhanced if enhanced is not None else self._extract_visual_features_basic(image_path)
+
+    def _extract_visual_features_basic(self, image_path: str) -> Optional[np.ndarray]:
+        """
+        Extract visual features from an image for non-face matching.
+
+        Args:
+            image_path: Path to the image file
+
+        Returns:
+            Feature vector or None if extraction fails
+        """
+        try:
+            # Load image
+            image = cv2.imread(image_path)
+            if image is None:
+                return None
+
+            # Resize to standard size for consistent feature extraction
+            image = cv2.resize(image, (224, 224))
+
+            # Convert to RGB
+            image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+            # Extract color histogram features
+            hist_r = cv2.calcHist([image_rgb], [0], None, [64], [0, 256])
+            hist_g = cv2.calcHist([image_rgb], [1], None, [64], [0, 256])
+            hist_b = cv2.calcHist([image_rgb], [2], None, [64], [0, 256])
+
+            # Extract texture features using LBP (Local Binary Patterns)
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+            # Simple texture analysis using gradient magnitude
+            grad_x = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)
+            grad_y = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3)
+            magnitude = np.sqrt(grad_x**2 + grad_y**2)
+
+            # Create feature vector
+            color_features = np.concatenate([hist_r.flatten(), hist_g.flatten(), hist_b.flatten()])
+            texture_features = np.histogram(magnitude, bins=32)[0]
+
+            # Combine all features
+            features = np.concatenate([color_features, texture_features])
+
+            # Normalize features
+            features = features / (np.linalg.norm(features) + 1e-8)
+
+            return features
+
+        except Exception as e:
+            return None
+
+    def _detect_jersey_number(self, image_path: str) -> Optional[int]:
+        """
+        Detect jersey number in an image using OCR.
+
+        Args:
+            image_path: Path to the image file
+
+        Returns:
+            Jersey number if detected, None otherwise
+        """
+        try:
+            # Try to import pytesseract (optional dependency)
+            try:
+                import pytesseract
+            except ImportError:
+                return None
+
+            # Load and preprocess image for better OCR
+            image = cv2.imread(image_path)
+            if image is None:
+                return None
+
+            # Convert to grayscale
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+            # Apply different preprocessing techniques to improve OCR
+            preprocessing_methods = [
+                # Original grayscale
+                gray,
+                # High contrast
+                cv2.convertScaleAbs(gray, alpha=2.0, beta=0),
+                # Threshold
+                cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1],
+                # Gaussian blur + threshold
+                cv2.threshold(
+                    cv2.GaussianBlur(gray, (5, 5), 0), 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
+                )[1],
+            ]
+
+            detected_numbers = []
+
+            for processed_image in preprocessing_methods:
+                try:
+                    # Configure pytesseract for digits only
+                    custom_config = r"--oem 3 --psm 8 -c tessedit_char_whitelist=0123456789"
+                    text = pytesseract.image_to_string(
+                        processed_image, config=custom_config
+                    ).strip()
+
+                    # Extract numbers from detected text
+                    numbers = re.findall(r"\d+", text)
+                    for num_str in numbers:
+                        num = int(num_str)
+                        # Reasonable jersey number range (1-99)
+                        if 1 <= num <= 99:
+                            detected_numbers.append(num)
+
+                except Exception:
+                    continue
+
+            # Return most common detected number
+            if detected_numbers:
+                from collections import Counter
+
+                most_common = Counter(detected_numbers).most_common(1)[0][0]
+                return most_common
+
+            return None
+
+        except Exception as e:
+            return None
+
+    def _load_jersey_number_mapping(self, players_dir: str, logger: Optional[callable] = None):
+        """
+        Load jersey number mappings from various sources.
+
+        Args:
+            players_dir: Directory containing player references
+            logger: Optional logging function
+        """
+        if logger is None:
+            logger = print
+
+        # Method 1: Look for jersey_numbers.json file
+        json_path = os.path.join(players_dir, "jersey_numbers.json")
+        if os.path.exists(json_path):
+            try:
+                with open(json_path, "r") as f:
+                    jersey_mapping = json.load(f)
+                    for player_name, jersey_num in jersey_mapping.items():
+                        self.player_jersey_numbers[player_name] = int(jersey_num)
+                        self.jersey_to_player[int(jersey_num)] = player_name
+                logger(f"📋 Loaded jersey numbers from {json_path}")
+                return
+            except Exception as e:
+                logger(f"⚠️  Error loading jersey_numbers.json: {e}")
+
+        # Method 2: Extract from filenames (e.g., "Messi_10.jpg" or "10_Messi.jpg")
+        for filename in os.listdir(players_dir):
+            if not filename.lower().endswith((".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".webp")):
+                continue
+
+            name_without_ext = os.path.splitext(filename)[0]
+
+            # Try pattern: PlayerName_Number
+            match = re.match(r"^(.+)_(\d+)$", name_without_ext)
+            if match:
+                player_name = match.group(1)
+                jersey_num = int(match.group(2))
+                self.player_jersey_numbers[player_name] = jersey_num
+                self.jersey_to_player[jersey_num] = player_name
+                continue
+
+            # Try pattern: Number_PlayerName
+            match = re.match(r"^(\d+)_(.+)$", name_without_ext)
+            if match:
+                jersey_num = int(match.group(1))
+                player_name = match.group(2)
+                self.player_jersey_numbers[player_name] = jersey_num
+                self.jersey_to_player[jersey_num] = player_name
+                continue
+
+        if self.player_jersey_numbers:
+            logger(
+                f"🔢 Extracted jersey numbers from filenames: {len(self.player_jersey_numbers)} players"
+            )
+            logger("⚠️  Note: OCR jersey detection works best with:")
+            logger("   - Clear, high-resolution back view photos")
+            logger("   - Good lighting and contrast")
+            logger("   - Minimal motion blur")
+            logger("   - Numbers not obscured by shadows or wrinkles")
+        else:
+            logger("💡 No jersey numbers found. You can provide them via:")
+            logger('   - jersey_numbers.json file: {"Messi": 10, "Ronaldo": 7}')
+            logger("   - Filename format: Messi_10.jpg or 10_Messi.jpg")
+            logger("📝 Alternative: Use visual feature matching which works better for:")
+            logger("   - Action shots, side views, various lighting conditions")
 
     def load_reference_players(self, players_dir: str, logger: Optional[callable] = None) -> bool:
         """
@@ -55,14 +350,23 @@ class PlayerGroupingProcessor:
 
         logger(f"📂 Loading reference players from {players_dir}...")
 
+        # Load jersey number mappings
+        if self.enable_jersey_number_matching:
+            self._load_jersey_number_mapping(players_dir, logger)
+
         for player_file in player_files:
             try:
                 player_path = os.path.join(players_dir, player_file)
                 player_name = os.path.splitext(player_file)[0]
 
+                logger(f"🔍 Processing {player_file} -> player name: '{player_name}'")
+
                 # Load and encode the reference photo
                 image = face_recognition.load_image_file(player_path)
+                logger(f"  📖 Image loaded: {image.shape if image is not None else 'None'}")
+
                 face_encodings = face_recognition.face_encodings(image)
+                logger(f"  🎭 Face encodings found: {len(face_encodings)}")
 
                 if len(face_encodings) == 0:
                     logger(f"⚠️  No face found in {player_file}")
@@ -73,11 +377,25 @@ class PlayerGroupingProcessor:
                 self.reference_players[player_name] = face_encodings[0]
                 logger(f"✅ Loaded reference for player: {player_name}")
 
+                # Also extract visual features for non-face matching if enabled
+                if self.enable_non_face_matching:
+                    visual_features = self._extract_visual_features(player_path)
+                    if visual_features is not None:
+                        self.reference_visual_features[player_name] = visual_features
+                        logger(f"  🎨 Visual features extracted for {player_name}")
+                    else:
+                        logger(f"  ⚠️  Could not extract visual features for {player_name}")
+
             except Exception as e:
                 logger(f"⚠️  Error loading {player_file}: {str(e)}")
+                import traceback
+
+                logger(f"  📄 Full error: {traceback.format_exc()}")
                 continue
 
-        logger(f"🎯 Loaded {len(self.reference_players)} player references")
+        logger(f"🎯 Loaded {len(self.reference_players)} player face references")
+        if self.enable_non_face_matching:
+            logger(f"🎨 Loaded {len(self.reference_visual_features)} player visual references")
         return len(self.reference_players) > 0
 
     def group_photos_by_players(
@@ -120,19 +438,49 @@ class PlayerGroupingProcessor:
                 )
 
                 result = self.face_detector.detect_faces(image_path)
-                if not result.get("face_info") or len(result["face_info"]) == 0:
-                    unknown_photos.append(image_path)
-                    continue
-
-                # Check each face in the photo against reference players
                 matched_players = set()
-                for face_info in result["face_info"]:
-                    if face_info.get("embedding") is None:
-                        continue
 
-                    matched_player = self._match_face_to_player(face_info["embedding"])
-                    if matched_player:
-                        matched_players.add(matched_player)
+                if not result.get("face_info") or len(result["face_info"]) == 0:
+                    # No faces detected - try alternative matching methods
+                    logger(f"  👤 No faces detected, trying alternative matching...")
+
+                    # Try jersey number matching first (most reliable for back views)
+                    if self.enable_jersey_number_matching:
+                        # Debug: show detected number
+                        detected_number = self._detect_jersey_number(image_path)
+                        if detected_number:
+                            logger(f"  🔢 Detected jersey number: {detected_number}")
+                            jersey_match = self.jersey_to_player.get(detected_number)
+                            if jersey_match:
+                                matched_players.add(jersey_match)
+                                logger(f"  ✅ Jersey number match found: {jersey_match}")
+                            else:
+                                logger(
+                                    f"  ❓ Jersey number {detected_number} not found in player mappings"
+                                )
+                        else:
+                            logger(f"  🔢 No jersey number detected")
+
+                    # Try visual feature matching if no jersey match
+                    if not matched_players and self.enable_non_face_matching:
+                        visual_match = self._match_visual_features_to_player(image_path)
+                        if visual_match:
+                            matched_players.add(visual_match)
+                            logger(f"  🎨 Visual feature match found: {visual_match}")
+
+                    if not matched_players:
+                        logger(f"  ❓ No matches found using any method")
+                        unknown_photos.append(image_path)
+                        continue
+                else:
+                    # Check each face in the photo against reference players
+                    for face_info in result["face_info"]:
+                        if face_info.get("embedding") is None:
+                            continue
+
+                        matched_player = self._match_face_to_player(face_info["embedding"])
+                        if matched_player:
+                            matched_players.add(matched_player)
 
                 if len(matched_players) == 0:
                     unknown_photos.append(image_path)
@@ -227,7 +575,10 @@ class PlayerGroupingProcessor:
         if not self.reference_players or face_encoding is None:
             return None
 
-        # Compare against all reference players
+        best_match = None
+        best_similarity = 0.0
+
+        # Compare against ALL reference players to find the BEST match
         for player_name, reference_encoding in self.reference_players.items():
             try:
                 # Calculate face distance (lower = more similar)
@@ -237,13 +588,73 @@ class PlayerGroupingProcessor:
                 # face_recognition.face_distance returns values where 0.6 is the typical threshold
                 similarity = 1.0 - distance
 
-                if similarity >= self.face_match_threshold:
-                    return player_name
+                # Only consider matches above threshold, and track the best one
+                if similarity >= self.face_match_threshold and similarity > best_similarity:
+                    best_similarity = similarity
+                    best_match = player_name
 
             except Exception as e:
                 continue
 
-        return None
+        return best_match
+
+    def _match_visual_features_to_player(self, image_path: str) -> Optional[str]:
+        """
+        Match a photo to a reference player using visual features (for non-face photos).
+
+        Args:
+            image_path: Path to the image to match
+
+        Returns:
+            Player name if match found, None otherwise
+        """
+        if not self.enable_non_face_matching or not self.reference_visual_features:
+            return None
+
+        # Extract visual features from the photo
+        photo_features = self._extract_visual_features(image_path)
+        if photo_features is None:
+            return None
+
+        best_match = None
+        best_similarity = 0.0
+
+        # Compare against all reference visual features
+        for player_name, reference_features in self.reference_visual_features.items():
+            try:
+                # Calculate cosine similarity
+                similarity = cosine_similarity([photo_features], [reference_features])[0][0]
+
+                # Track the best match above threshold
+                if similarity >= self.visual_similarity_threshold and similarity > best_similarity:
+                    best_similarity = similarity
+                    best_match = player_name
+
+            except Exception as e:
+                continue
+
+        return best_match
+
+    def _match_jersey_number_to_player(self, image_path: str) -> Optional[str]:
+        """
+        Match a photo to a reference player using jersey number detection.
+
+        Args:
+            image_path: Path to the image to match
+
+        Returns:
+            Player name if jersey number match found, None otherwise
+        """
+        if not self.enable_jersey_number_matching or not self.jersey_to_player:
+            return None
+
+        # Detect jersey number in the photo
+        jersey_number = self._detect_jersey_number(image_path)
+        if jersey_number is None:
+            return None
+
+        # Look up player by jersey number
+        return self.jersey_to_player.get(jersey_number)
 
     def set_face_match_threshold(self, threshold: float):
         """
@@ -254,6 +665,28 @@ class PlayerGroupingProcessor:
         """
         self.face_match_threshold = max(0.0, min(1.0, threshold))
 
+    def set_visual_similarity_threshold(self, threshold: float):
+        """
+        Update the visual similarity threshold for non-face matching.
+
+        Args:
+            threshold: New threshold value (0.0 to 1.0, higher = stricter matching)
+        """
+        self.visual_similarity_threshold = max(0.0, min(1.0, threshold))
+
+    def enable_disable_non_face_matching(self, enabled: bool):
+        """
+        Enable or disable non-face (visual feature) matching.
+
+        Args:
+            enabled: Whether to enable non-face matching
+        """
+        self.enable_non_face_matching = enabled
+
     def get_reference_players(self) -> List[str]:
         """Get list of loaded reference player names."""
         return list(self.reference_players.keys())
+
+    def get_visual_reference_players(self) -> List[str]:
+        """Get list of players with visual feature references."""
+        return list(self.reference_visual_features.keys())
