@@ -13,9 +13,10 @@ from PyQt6.QtWidgets import (
     QSplitter,
     QListWidget,
     QListWidgetItem,
+    QMessageBox,
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSize
-from PyQt6.QtGui import QPixmap, QFont, QPainter, QPen, QIcon
+from PyQt6.QtGui import QPixmap, QFont, QPainter, QPen, QIcon, QKeySequence, QShortcut
 
 
 class PhotoThumbnailLoader(QThread):
@@ -62,6 +63,8 @@ class PhotoViewer(QWidget):
         self.current_index = 0
         self.thumbnail_loader: Optional[PhotoThumbnailLoader] = None
         self.total_photo_count: Optional[int] = None  # For fast loading mode
+        self.full_photo_paths: Optional[List[str]] = None  # All photos when loaded
+        self.current_folder: Optional[str] = None  # Store current folder path
 
         self.setup_ui()
 
@@ -96,12 +99,38 @@ class PhotoViewer(QWidget):
         self.photo_counter.setAlignment(Qt.AlignmentFlag.AlignCenter)
         nav_layout.addWidget(self.photo_counter)
 
+        # Delete button for removing bad photos
+        self.delete_btn = QPushButton("🗑️ Delete Photo")
+        self.delete_btn.clicked.connect(self.delete_current_photo)
+        self.delete_btn.setEnabled(False)
+        self.delete_btn.setToolTip(
+            "Delete the current photo from disk (permanent)\nKeyboard shortcut: Delete key"
+        )
+        self.delete_btn.setStyleSheet(
+            "QPushButton { background-color: #ff4444; color: white; font-weight: bold; }"
+        )
+        nav_layout.addWidget(self.delete_btn)
+
+        # Load All Photos button (initially hidden)
+        self.load_all_btn = QPushButton("📁 Load All Photos")
+        self.load_all_btn.clicked.connect(self.load_all_photos)
+        self.load_all_btn.setVisible(False)
+        self.load_all_btn.setToolTip("Load all photos in the folder for browsing")
+        self.load_all_btn.setStyleSheet(
+            "QPushButton { background-color: #4CAF50; color: white; font-weight: bold; }"
+        )
+        nav_layout.addWidget(self.load_all_btn)
+
         self.next_btn = QPushButton("Next ▶")
         self.next_btn.clicked.connect(self.show_next)
         self.next_btn.setEnabled(False)
         nav_layout.addWidget(self.next_btn)
 
         layout.addLayout(nav_layout)
+
+        # Add keyboard shortcut for delete
+        self.delete_shortcut = QShortcut(QKeySequence.StandardKey.Delete, self)
+        self.delete_shortcut.activated.connect(self.delete_current_photo)
 
     def create_main_photo_area(self) -> QWidget:
         """Create the main photo display area."""
@@ -166,14 +195,134 @@ class PhotoViewer(QWidget):
 
         return area
 
+    def delete_current_photo(self):
+        """Delete the currently displayed photo from disk."""
+        if not self.photo_paths or self.current_index >= len(self.photo_paths):
+            return
+
+        current_photo_path = self.photo_paths[self.current_index]
+        filename = os.path.basename(current_photo_path)
+
+        # Confirmation dialog
+        reply = QMessageBox.question(
+            self,
+            "Delete Photo",
+            f"Are you sure you want to permanently delete:\n\n{filename}\n\nThis action cannot be undone.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            try:
+                # Delete the file from disk
+                os.remove(current_photo_path)
+                print(f"Deleted photo: {current_photo_path}")
+
+                # Remove from our photo lists
+                self.photo_paths.pop(self.current_index)
+                if self.full_photo_paths and current_photo_path in self.full_photo_paths:
+                    self.full_photo_paths.remove(current_photo_path)
+
+                # Update total count
+                if self.total_photo_count:
+                    self.total_photo_count -= 1
+
+                # Remove thumbnail from list
+                self.remove_thumbnail_at_index(self.current_index)
+
+                # Adjust current index if needed
+                if self.current_index >= len(self.photo_paths) and self.photo_paths:
+                    self.current_index = len(self.photo_paths) - 1
+                elif not self.photo_paths:
+                    self.current_index = 0
+
+                # Update UI
+                if self.photo_paths:
+                    self.show_current_photo()
+                    self.update_photo_counter()
+                    self.update_navigation_buttons()
+                else:
+                    self.clear_photos()
+
+                # Show success message briefly
+                QMessageBox.information(
+                    self,
+                    "Photo Deleted",
+                    f"Successfully deleted {filename}",
+                    QMessageBox.StandardButton.Ok,
+                )
+
+            except Exception as e:
+                QMessageBox.critical(
+                    self,
+                    "Delete Failed",
+                    f"Failed to delete {filename}:\n\n{str(e)}",
+                    QMessageBox.StandardButton.Ok,
+                )
+
+    def remove_thumbnail_at_index(self, index: int):
+        """Remove thumbnail at specific index from the thumbnail list."""
+        if index < self.thumbnail_list.count():
+            item = self.thumbnail_list.takeItem(index)
+            if item:
+                del item
+
+    def load_all_photos(self):
+        """Load all photos from the current folder."""
+        if not self.current_folder:
+            print("No current folder to load from")
+            return
+
+        try:
+            # Import here to avoid circular imports
+            from ...utils.image_utils import get_image_paths
+
+            # Update button to show loading state
+            self.load_all_btn.setText("🔄 Loading All Photos...")
+            self.load_all_btn.setEnabled(False)
+
+            # Get all image paths from folder
+            all_paths = get_image_paths(self.current_folder)
+
+            if all_paths:
+                self.full_photo_paths = all_paths
+                self.photo_paths = all_paths
+                self.total_photo_count = len(all_paths)
+
+                # Update UI
+                self.update_photo_counter()
+                self.update_navigation_buttons()
+
+                # Load all thumbnails
+                self.load_thumbnails()
+
+                # Hide the Load All button since all photos are now loaded
+                self.load_all_btn.setVisible(False)
+
+                print(f"Loaded {len(all_paths)} photos for browsing")
+            else:
+                print("No photos found in folder")
+                self.load_all_btn.setText("❌ No Photos Found")
+
+        except Exception as e:
+            print(f"Error loading all photos: {e}")
+            self.load_all_btn.setText("❌ Error Loading")
+            self.load_all_btn.setEnabled(True)
+
     def load_photos(self, photo_paths: List[str]):
         """Load photos into the viewer."""
         self.photo_paths = photo_paths
         self.current_index = 0
+        self.full_photo_paths = photo_paths  # All photos are already loaded
+        self.total_photo_count = len(photo_paths)
+        self.current_folder = None  # Clear folder since we have specific files
 
         if not photo_paths:
             self.clear_photos()
             return
+
+        # Hide Load All button since all photos are already loaded
+        self.load_all_btn.setVisible(False)
 
         # Update counter
         self.update_photo_counter()
@@ -187,15 +336,26 @@ class PhotoViewer(QWidget):
         # Load thumbnails in background
         self.load_thumbnails()
 
-    def load_photos_fast(self, preview_paths: List[str], total_count: int):
+    def load_photos_fast(
+        self, preview_paths: List[str], total_count: int, folder_path: Optional[str] = None
+    ):
         """Load photos with fast preview (only first few photos loaded initially)."""
         self.photo_paths = preview_paths  # Start with preview paths
         self.total_photo_count = total_count  # Store total count
         self.current_index = 0
+        self.full_photo_paths = None  # Will be set when all photos are loaded
+        self.current_folder = folder_path  # Store folder for loading all photos later
 
         if not preview_paths:
             self.clear_photos()
             return
+
+        # Show Load All Photos button if there are more photos than preview
+        if total_count > len(preview_paths):
+            self.load_all_btn.setVisible(True)
+            self.load_all_btn.setText(f"📁 Load All {total_count} Photos")
+        else:
+            self.load_all_btn.setVisible(False)
 
         # Update counter with total count
         self.update_photo_counter_with_total(total_count)
@@ -214,12 +374,17 @@ class PhotoViewer(QWidget):
         self.photo_paths.clear()
         self.current_index = 0
         self.thumbnail_list.clear()
+        self.total_photo_count = None
+        self.full_photo_paths = None
+        self.current_folder = None
 
         self.photo_label.setText("No photo selected\\n\\nSelect a folder or files to begin")
         self.photo_counter.setText("No photos loaded")
         self.photo_info_label.setText("")
         self.prev_btn.setEnabled(False)
         self.next_btn.setEnabled(False)
+        self.delete_btn.setEnabled(False)
+        self.load_all_btn.setVisible(False)
 
     def load_thumbnails(self):
         """Load thumbnails in a background thread."""
@@ -373,3 +538,4 @@ class PhotoViewer(QWidget):
         has_photos = bool(self.photo_paths)
         self.prev_btn.setEnabled(has_photos and self.current_index > 0)
         self.next_btn.setEnabled(has_photos and self.current_index < len(self.photo_paths) - 1)
+        self.delete_btn.setEnabled(has_photos)  # Enable delete button when photos are loaded

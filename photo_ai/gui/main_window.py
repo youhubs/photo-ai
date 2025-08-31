@@ -19,8 +19,9 @@ from PyQt6.QtWidgets import (
     QSplitter,
     QButtonGroup,
     QRadioButton,
+    QApplication,
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer
 from PyQt6.QtGui import QFont, QKeySequence, QShortcut
 
 from ..core.photo_processor import PhotoProcessor
@@ -89,6 +90,45 @@ class PhotoAIMainWindow(QMainWindow):
 
         # Ensure buttons are in correct initial state
         self.update_selection_display()
+
+        # Final debug check of button state
+        print(f"Initialization complete - folder button state:")
+        print(f"  Visible: {self.select_folder_btn.isVisible()}")
+        print(f"  Enabled: {self.select_folder_btn.isEnabled()}")
+        print(
+            f"  Connected: {self.select_folder_btn.receivers(self.select_folder_btn.clicked) > 0}"
+        )
+        print(f"  Parent: {self.select_folder_btn.parent()}")
+        print(f"  Size: {self.select_folder_btn.size()}")
+        print(f"  Position: {self.select_folder_btn.pos()}")
+
+        # Process pending events to ensure UI is fully rendered
+        QApplication.processEvents()
+
+        # Set up a timer to double-check button state after a short delay
+        QTimer.singleShot(100, self.verify_button_initialization)
+
+    def verify_button_initialization(self):
+        """Verify button is properly initialized after UI is fully rendered."""
+        print(f"Post-init verification - folder button state:")
+        print(f"  Visible: {self.select_folder_btn.isVisible()}")
+        print(f"  Enabled: {self.select_folder_btn.isEnabled()}")
+        print(f"  Size: {self.select_folder_btn.size()}")
+        print(f"  Position: {self.select_folder_btn.pos()}")
+
+        # If button is not properly sized/positioned, try to fix it
+        if (
+            self.select_folder_btn.size().width() == 0
+            or self.select_folder_btn.size().height() == 0
+        ):
+            print("Button has invalid size - forcing layout update")
+            self.select_folder_btn.setVisible(False)
+            QApplication.processEvents()
+            self.select_folder_btn.setVisible(True)
+            self.select_folder_btn.update()
+            QApplication.processEvents()
+
+        print("Button initialization verification complete")
 
     def setup_ui(self):
         """Setup the main user interface."""
@@ -735,7 +775,22 @@ class PhotoAIMainWindow(QMainWindow):
         try:
             print("Opening folder dialog...")  # Debug
 
-            # Try different approaches for macOS compatibility
+            # First try the standard approach
+            folder = QFileDialog.getExistingDirectory(
+                self, "Select Photo Folder", "", QFileDialog.Option.ShowDirsOnly
+            )
+
+            if folder:
+                print(f"Folder selected via standard dialog: {folder}")  # Debug
+                self.selected_folder = folder
+                self.selected_files = []
+                self.update_selection_display()
+                # Use async loading for better performance
+                self.load_photos_preview_async()
+                return
+
+            # If standard approach didn't work, try custom dialog approach
+            print("Standard dialog returned empty, trying custom dialog...")  # Debug
             dialog = QFileDialog(self)
             dialog.setFileMode(QFileDialog.FileMode.Directory)
             dialog.setOption(QFileDialog.Option.ShowDirsOnly, True)
@@ -745,16 +800,16 @@ class PhotoAIMainWindow(QMainWindow):
                 folders = dialog.selectedFiles()
                 if folders:
                     folder = folders[0]
-                    print(f"Folder selected via dialog: {folder}")  # Debug
+                    print(f"Folder selected via custom dialog: {folder}")  # Debug
                     self.selected_folder = folder
                     self.selected_files = []
                     self.update_selection_display()
                     # Use async loading for better performance
                     self.load_photos_preview_async()
                 else:
-                    print("No folders in selection")  # Debug
+                    print("No folders in custom dialog selection")  # Debug
             else:
-                print("Dialog cancelled")  # Debug
+                print("Custom dialog cancelled")  # Debug
 
         except Exception as e:
             error_msg = f"Failed to select folder: {str(e)}"
@@ -869,7 +924,9 @@ class PhotoAIMainWindow(QMainWindow):
 
         # Load preview with first few photos for quick display
         if preview_paths:
-            self.photo_viewer.load_photos_fast(preview_paths, total_count=image_count)
+            self.photo_viewer.load_photos_fast(
+                preview_paths, total_count=image_count, folder_path=self.selected_folder
+            )
 
             # Show helpful message for large folders
             if image_count > 50:
