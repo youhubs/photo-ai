@@ -65,9 +65,13 @@ Examples:
     )
 
     # Sports command
-    sports_parser = subparsers.add_parser("sports", help="Process sports photos with enhancement and smart naming")
+    sports_parser = subparsers.add_parser(
+        "sports", help="Process sports photos with enhancement and smart naming"
+    )
     sports_parser.add_argument("directory", help="Directory containing sports photos")
-    sports_parser.add_argument("--output", "-o", help="Output directory (default: input_dir/output)")
+    sports_parser.add_argument(
+        "--output", "-o", help="Output directory (default: input_dir/output)"
+    )
 
     # Stats command
     stats_parser = subparsers.add_parser("stats", help="Show processing statistics")
@@ -137,9 +141,9 @@ Examples:
                 print(f"Error: Directory not found: {args.directory}")
                 return 1
 
-            output_dir = args.output or os.path.join(args.directory, 'output')
+            output_dir = args.output or os.path.join(args.directory, "output")
             result = processor.process_sports_photos(args.directory, output_dir)
-            
+
             if not result["success"]:
                 print(f"Error: {result['error']}")
                 return 1
@@ -243,7 +247,7 @@ def _print_analysis_results(results, format_type):
 def _print_sports_results(result):
     """Print sports photo processing results."""
     print("\\n=== Sports Photo Processing Results ===")
-    
+
     stats = result["statistics"]
     print(f"📸 Total input photos: {stats['total_input']}")
     print(f"✅ Good quality photos: {stats['good_quality']}")
@@ -251,25 +255,25 @@ def _print_sports_results(result):
     print(f"✨ Successfully enhanced: {stats['successfully_enhanced']}")
     print(f"🗑️ Discarded photos: {stats['discarded']}")
     print(f"📊 Success rate: {stats['success_rate']:.1f}%")
-    
+
     print(f"\\n📁 Output Structure:")
     structure = result["output_structure"]
     print(f"  Enhanced photos: {structure['enhanced_photos']}")
     print(f"  Original best photos: {structure['best_photos']}")
     print(f"  Discarded photos: {structure['discarded_photos']}")
-    
+
     if result.get("summary_file"):
         print(f"\\n📄 Detailed summary: {result['summary_file']}")
-    
+
     # Show sample enhancements
     enhanced_images = result.get("enhanced_images", [])
     if enhanced_images:
         print(f"\\n🔧 Enhancement Summary:")
         enhancement_counts = {}
         for img in enhanced_images:
-            for enhancement in img.get('enhancements', []):
+            for enhancement in img.get("enhancements", []):
                 enhancement_counts[enhancement] = enhancement_counts.get(enhancement, 0) + 1
-        
+
         for enhancement, count in sorted(enhancement_counts.items()):
             print(f"  {enhancement}: {count} photos")
 

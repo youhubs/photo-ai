@@ -10,10 +10,10 @@ class LoggerWidget(QTextEdit):
     """
 
     LEVEL_COLORS = {
-        "info": "#3498db",      # blue
-        "success": "#2ecc71",   # green
-        "warning": "#f1c40f",   # yellow
-        "error": "#e74c3c",     # red
+        "info": "#3498db",  # blue
+        "success": "#2ecc71",  # green
+        "warning": "#f1c40f",  # yellow
+        "error": "#e74c3c",  # red
     }
 
     def __init__(self, parent=None, dark_mode=True):
@@ -24,19 +24,23 @@ class LoggerWidget(QTextEdit):
 
         # Apply default dark or light style
         if dark_mode:
-            self.setStyleSheet("""
+            self.setStyleSheet(
+                """
                 background-color: #2a2a2a;
                 color: #ffffff;
                 font-family: monospace;
                 font-size: 12pt;
-            """)
+            """
+            )
         else:
-            self.setStyleSheet("""
+            self.setStyleSheet(
+                """
                 background-color: #ffffff;
                 color: #000000;
                 font-family: monospace;
                 font-size: 12pt;
-            """)
+            """
+            )
 
     def log(self, message: str, level: str = "info"):
         """Append a message with optional level color."""

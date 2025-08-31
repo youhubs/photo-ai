@@ -23,10 +23,11 @@ class PhotoThumbnailLoader(QThread):
 
     thumbnail_loaded = pyqtSignal(str, QPixmap)
 
-    def __init__(self, photo_paths: List[str]):
+    def __init__(self, photo_paths: List[str], fast_mode: bool = False):
         super().__init__()
         self.photo_paths = photo_paths
-        self.thumbnail_size = QSize(150, 150)
+        self.thumbnail_size = QSize(120, 120) if fast_mode else QSize(150, 150)
+        self.fast_mode = fast_mode
 
     def run(self):
         """Load thumbnails for all photos."""
@@ -34,11 +35,18 @@ class PhotoThumbnailLoader(QThread):
             try:
                 pixmap = QPixmap(photo_path)
                 if not pixmap.isNull():
+                    # Use faster scaling for fast mode
+                    transform_mode = (
+                        Qt.TransformationMode.FastTransformation
+                        if self.fast_mode
+                        else Qt.TransformationMode.SmoothTransformation
+                    )
+
                     # Scale to thumbnail size while maintaining aspect ratio
                     thumbnail = pixmap.scaled(
                         self.thumbnail_size,
                         Qt.AspectRatioMode.KeepAspectRatio,
-                        Qt.TransformationMode.SmoothTransformation,
+                        transform_mode,
                     )
                     self.thumbnail_loaded.emit(photo_path, thumbnail)
             except Exception as e:
@@ -53,6 +61,7 @@ class PhotoViewer(QWidget):
         self.photo_paths: List[str] = []
         self.current_index = 0
         self.thumbnail_loader: Optional[PhotoThumbnailLoader] = None
+        self.total_photo_count: Optional[int] = None  # For fast loading mode
 
         self.setup_ui()
 
@@ -178,6 +187,28 @@ class PhotoViewer(QWidget):
         # Load thumbnails in background
         self.load_thumbnails()
 
+    def load_photos_fast(self, preview_paths: List[str], total_count: int):
+        """Load photos with fast preview (only first few photos loaded initially)."""
+        self.photo_paths = preview_paths  # Start with preview paths
+        self.total_photo_count = total_count  # Store total count
+        self.current_index = 0
+
+        if not preview_paths:
+            self.clear_photos()
+            return
+
+        # Update counter with total count
+        self.update_photo_counter_with_total(total_count)
+
+        # Enable/disable navigation
+        self.update_navigation_buttons()
+
+        # Show first photo
+        self.show_current_photo()
+
+        # Load thumbnails for preview photos only
+        self.load_thumbnails_fast(preview_paths)
+
     def clear_photos(self):
         """Clear all photos from viewer."""
         self.photo_paths.clear()
@@ -205,6 +236,24 @@ class PhotoViewer(QWidget):
 
         # Start loading thumbnails
         self.thumbnail_loader = PhotoThumbnailLoader(self.photo_paths)
+        self.thumbnail_loader.thumbnail_loaded.connect(self.on_thumbnail_loaded)
+        self.thumbnail_loader.start()
+
+    def load_thumbnails_fast(self, preview_paths: List[str]):
+        """Load thumbnails for preview photos only (faster loading)."""
+        if self.thumbnail_loader and self.thumbnail_loader.isRunning():
+            self.thumbnail_loader.terminate()
+
+        self.thumbnail_list.clear()
+
+        # Add placeholder items for preview photos only
+        for i, path in enumerate(preview_paths):
+            item = QListWidgetItem(os.path.basename(path))
+            item.setData(Qt.ItemDataRole.UserRole, path)
+            self.thumbnail_list.addItem(item)
+
+        # Start loading thumbnails for preview photos (with fast mode)
+        self.thumbnail_loader = PhotoThumbnailLoader(preview_paths, fast_mode=True)
         self.thumbnail_loader.thumbnail_loaded.connect(self.on_thumbnail_loaded)
         self.thumbnail_loader.start()
 
@@ -302,6 +351,20 @@ class PhotoViewer(QWidget):
             total = len(self.photo_paths)
             current = self.current_index + 1
             self.photo_counter.setText(f"Photo {current} of {total}")
+        else:
+            self.photo_counter.setText("No photos loaded")
+
+    def update_photo_counter_with_total(self, total_count: int):
+        """Update the photo counter with total count (for fast loading mode)."""
+        if self.photo_paths:
+            current = self.current_index + 1
+            preview_count = len(self.photo_paths)
+            if total_count > preview_count:
+                self.photo_counter.setText(
+                    f"Photo {current} of {preview_count} (preview of {total_count} total)"
+                )
+            else:
+                self.photo_counter.setText(f"Photo {current} of {total_count}")
         else:
             self.photo_counter.setText("No photos loaded")
 

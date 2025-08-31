@@ -21,7 +21,7 @@ class ProcessingThread(QThread):
         super().__init__()
         self.processor = processor
         self.input_source = input_source
-        self.operation = operation  # 'process', 'analyze', or 'visa'
+        self.operation = operation  # 'process', 'analyze', 'visa', 'player_grouping', 'quality', 'duplicates', 'selection'
 
     def run(self):
         """Execute the processing operation."""
@@ -32,6 +32,14 @@ class ProcessingThread(QThread):
                 self.run_analysis()
             elif self.operation == "visa":
                 self.run_visa_processing()
+            elif self.operation == "player_grouping":
+                self.run_player_grouping()
+            elif self.operation == "quality":
+                self.run_quality_step()
+            elif self.operation == "duplicates":
+                self.run_duplicates_step()
+            elif self.operation == "selection":
+                self.run_selection_step()
             else:
                 raise ValueError(f"Unknown operation: {self.operation}")
 
@@ -161,3 +169,110 @@ class ProcessingThread(QThread):
 
         except Exception as e:
             return {"success": False, "error": str(e)}
+
+    def run_player_grouping(self):
+        """Run player grouping analysis."""
+        self.status_updated.emit("Starting player grouping...")
+        self.progress_updated.emit(0)
+
+        try:
+            self.progress_updated.emit(25)
+
+            # Call the player grouping method
+            results = self.processor.group_photos_by_players(self.input_source)
+
+            self.progress_updated.emit(100)
+
+            if results.get("success", False):
+                self.status_updated.emit("Player grouping completed successfully")
+                self.finished_processing.emit(results)
+            else:
+                self.error_occurred.emit(results.get("error", "Player grouping failed"))
+
+        except Exception as e:
+            self.error_occurred.emit(f"Player grouping failed: {str(e)}")
+
+    def run_quality_step(self):
+        """Run quality analysis step only."""
+        self.status_updated.emit("Analyzing photo quality...")
+        self.progress_updated.emit(0)
+
+        try:
+            if isinstance(self.input_source, list):
+                image_paths = self.input_source
+            else:
+                from ...utils.image_utils import get_image_paths
+
+                image_paths = get_image_paths(self.input_source)
+
+            if not image_paths:
+                self.error_occurred.emit("No images found to analyze")
+                return
+
+            self.progress_updated.emit(25)
+
+            # Only run sharpness analysis
+            results = self.processor.analyze_photo_quality(image_paths)
+
+            self.progress_updated.emit(100)
+            self.status_updated.emit("Quality analysis completed")
+            self.finished_processing.emit(results)
+
+        except Exception as e:
+            self.error_occurred.emit(f"Quality analysis failed: {str(e)}")
+
+    def run_duplicates_step(self):
+        """Run duplicate detection step only."""
+        self.status_updated.emit("Detecting duplicates...")
+        self.progress_updated.emit(0)
+
+        try:
+            if isinstance(self.input_source, list):
+                image_paths = self.input_source
+            else:
+                from ...utils.image_utils import get_image_paths
+
+                image_paths = get_image_paths(self.input_source)
+
+            if not image_paths:
+                self.error_occurred.emit("No images found for duplicate detection")
+                return
+
+            self.progress_updated.emit(25)
+
+            # Run only duplicate detection
+            duplicate_results = self.processor.duplicate_detector.find_comprehensive_duplicates(
+                image_paths
+            )
+
+            results = {"success": True, "duplicates": duplicate_results}
+
+            self.progress_updated.emit(100)
+            self.status_updated.emit("Duplicate detection completed")
+            self.finished_processing.emit(results)
+
+        except Exception as e:
+            self.error_occurred.emit(f"Duplicate detection failed: {str(e)}")
+
+    def run_selection_step(self):
+        """Run best photo selection step."""
+        self.status_updated.emit("Selecting best photos...")
+        self.progress_updated.emit(0)
+
+        try:
+            # This step needs results from previous steps
+            # For now, we'll create a simple placeholder
+            results = {
+                "success": True,
+                "selection": {
+                    "best_photos": 0,
+                    "message": "Best photo selection requires quality and duplicate analysis first",
+                },
+            }
+
+            self.progress_updated.emit(100)
+            self.status_updated.emit("Selection completed")
+            self.finished_processing.emit(results)
+
+        except Exception as e:
+            self.error_occurred.emit(f"Photo selection failed: {str(e)}")
