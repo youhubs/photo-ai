@@ -1,163 +1,166 @@
-"""Sharpness analysis and blur detection."""
+"""Sharpness analysis and blur detection - macOS safe."""
 
-import cv2
-import torch
 import numpy as np
-from typing import Dict, List, Tuple
-from PIL import Image
-from transformers import AutoFeatureExtractor, ResNetForImageClassification
+from PIL import Image, ImageFilter
+import os
+import logging
+from typing import Dict, List
+import gc
 
-from ...core.config import Config
+logger = logging.getLogger(__name__)
 
-
+# For backward compatibility, keep the original class name
 class SharpnessAnalyzer:
-    """Analyze image sharpness using multiple methods."""
-
-    def __init__(self, config: Config):
+    """Sharpness analysis using only PIL and numpy - completely safe for macOS."""
+    
+    def __init__(self, config):
         self.config = config
-        self.device = torch.device(
-            "cuda" if torch.cuda.is_available() and config.models.device != "cpu" else "cpu"
-        )
-        self._init_models()
-
-    def _init_models(self):
-        """Initialize ML models for sharpness analysis."""
+        self.laplacian_threshold = getattr(config.processing, 'sharpness_threshold', 100.0)
+        self.gradient_threshold = 50.0
+    
+    def _calculate_laplacian_pil(self, image_path: str) -> float:
+        """Calculate Laplacian variance using only PIL."""
         try:
-            # Use CPU to avoid memory issues on macOS
-            self.device = torch.device("cpu")
-            
-            self.extractor = AutoFeatureExtractor.from_pretrained(
-                self.config.models.sharpness_model
-            )
-            self.model = ResNetForImageClassification.from_pretrained(
-                self.config.models.sharpness_model
-            ).to(self.device)
-            self.model.eval()
-            
-            # Set conservative memory settings
-            torch.set_num_threads(2)  # Limit threads to prevent memory issues
-            
+            with Image.open(image_path) as img:
+                # Convert to grayscale
+                if img.mode != 'L':
+                    img = img.convert('L')
+                
+                # Apply Laplacian filter manually
+                laplacian_kernel = ImageFilter.Kernel(
+                    (3, 3),
+                    [0, 1, 0, 1, -4, 1, 0, 1, 0],
+                    scale=1
+                )
+                laplacian = img.filter(laplacian_kernel)
+                
+                # Convert to numpy array and calculate variance
+                laplacian_array = np.array(laplacian, dtype=np.float64)
+                variance = np.var(laplacian_array)
+                
+                return float(variance)
         except Exception as e:
-            print(f"Warning: Could not load ML model for sharpness: {e}")
-            self.extractor = None
-            self.model = None
-
-    def analyze_laplacian_variance(self, image_path: str, threshold: float = 100.0) -> Dict:
-        """Analyze sharpness using Laplacian variance method."""
+            logger.error(f"Laplacian calculation failed: {e}")
+            return 0.0
+    
+    def _calculate_gradient_pil(self, image_path: str) -> float:
+        """Calculate gradient magnitude using only PIL."""
         try:
-            image = cv2.imread(image_path)
-            if image is None:
-                raise ValueError("Could not load image")
-
-            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-            variance = cv2.Laplacian(gray, cv2.CV_64F).var()
-
-            return {
-                "method": "laplacian_variance",
-                "score": variance,
-                "is_sharp": variance > threshold,
-                "threshold": threshold,
-            }
+            with Image.open(image_path) as img:
+                if img.mode != 'L':
+                    img = img.convert('L')
+                
+                # Sobel operators using PIL filters
+                sobel_x_kernel = ImageFilter.Kernel(
+                    (3, 3),
+                    [-1, 0, 1, -2, 0, 2, -1, 0, 1],
+                    scale=1
+                )
+                sobel_y_kernel = ImageFilter.Kernel(
+                    (3, 3),
+                    [-1, -2, -1, 0, 0, 0, 1, 2, 1],
+                    scale=1
+                )
+                
+                grad_x = img.filter(sobel_x_kernel)
+                grad_y = img.filter(sobel_y_kernel)
+                
+                # Convert to numpy for magnitude calculation
+                grad_x_array = np.array(grad_x, dtype=np.float64)
+                grad_y_array = np.array(grad_y, dtype=np.float64)
+                
+                magnitude = np.sqrt(grad_x_array**2 + grad_y_array**2)
+                mean_magnitude = np.mean(magnitude)
+                
+                return float(mean_magnitude)
         except Exception as e:
-            return {"method": "laplacian_variance", "error": str(e)}
-
-    def analyze_ml_based(self, image_path: str) -> Dict:
-        """Analyze sharpness using pre-trained ML model."""
-        if not self.model or not self.extractor:
-            return {"method": "ml_based", "error": "Model not available"}
-
-        try:
-            image = Image.open(image_path)
-            inputs = self.extractor(image, return_tensors="pt").to(self.device)
-
-            with torch.no_grad():
-                outputs = self.model(**inputs)
-                probs = torch.nn.functional.softmax(outputs.logits, dim=-1)
-                sharp_prob = probs[0][1].item()  # Assuming class 1 is sharp
-
-            return {
-                "method": "ml_based",
-                "score": sharp_prob,
-                "is_sharp": sharp_prob > self.config.processing.sharpness_threshold,
-                "threshold": self.config.processing.sharpness_threshold,
-            }
-        except Exception as e:
-            return {"method": "ml_based", "error": str(e)}
-
-    def analyze_gradient_based(self, image_path: str, threshold: float = 50.0) -> Dict:
-        """Analyze sharpness using gradient-based method."""
-        try:
-            image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
-            if image is None:
-                raise ValueError("Could not load image")
-
-            # Calculate gradients
-            grad_x = cv2.Sobel(image, cv2.CV_64F, 1, 0, ksize=3)
-            grad_y = cv2.Sobel(image, cv2.CV_64F, 0, 1, ksize=3)
-
-            # Calculate gradient magnitude
-            magnitude = np.sqrt(grad_x**2 + grad_y**2)
-            score = np.mean(magnitude)
-
-            return {
-                "method": "gradient_based",
-                "score": score,
-                "is_sharp": score > threshold,
-                "threshold": threshold,
-            }
-        except Exception as e:
-            return {"method": "gradient_based", "error": str(e)}
-
+            logger.error(f"Gradient calculation failed: {e}")
+            return 0.0
+    
     def analyze_comprehensive(self, image_path: str) -> Dict:
-        """Comprehensive sharpness analysis using multiple methods."""
-        results = {"image_path": image_path, "analyses": []}
-
-        # Run all analysis methods
-        methods = [
-            self.analyze_laplacian_variance,
-            self.analyze_ml_based,
-            self.analyze_gradient_based,
-        ]
-
-        for method in methods:
-            result = method(image_path)
-            results["analyses"].append(result)
-
-        # Calculate overall assessment
-        valid_results = [r for r in results["analyses"] if "error" not in r]
-        if valid_results:
-            sharp_count = sum(1 for r in valid_results if r.get("is_sharp", False))
-            results["overall_is_sharp"] = sharp_count >= len(valid_results) / 2
-            results["confidence"] = sharp_count / len(valid_results)
-        else:
-            results["overall_is_sharp"] = False
-            results["confidence"] = 0.0
-
-        return results
-
+        """Run all sharpness checks safely."""
+        try:
+            # Method 1: Laplacian variance
+            laplacian_score = self._calculate_laplacian_pil(image_path)
+            
+            # Method 2: Gradient magnitude
+            gradient_score = self._calculate_gradient_pil(image_path)
+            
+            # Method 3: Edge count (simple alternative)
+            edge_count = self._count_edges_simple(image_path)
+            
+            # Combine scores
+            is_sharp = (
+                laplacian_score > self.laplacian_threshold or
+                gradient_score > self.gradient_threshold or
+                edge_count > 5000  # Arbitrary threshold
+            )
+            
+            confidence = min(1.0, (laplacian_score / 500.0 + gradient_score / 100.0) / 2)
+            
+            return {
+                "image_path": image_path,
+                "analyses": [
+                    {"method": "laplacian_variance", "score": laplacian_score, "is_sharp": laplacian_score > self.laplacian_threshold},
+                    {"method": "gradient_based", "score": gradient_score, "is_sharp": gradient_score > self.gradient_threshold},
+                    {"method": "edge_count", "score": edge_count, "is_sharp": edge_count > 5000}
+                ],
+                "overall_is_sharp": is_sharp,
+                "confidence": confidence,
+                "error": None
+            }
+            
+        except Exception as e:
+            logger.error(f"Sharpness analysis failed for {image_path}: {e}")
+            return {
+                "image_path": image_path,
+                "analyses": [],
+                "overall_is_sharp": False,
+                "confidence": 0.0,
+                "error": str(e)
+            }
+    
+    def _count_edges_simple(self, image_path: str) -> int:
+        """Simple edge counting method."""
+        try:
+            with Image.open(image_path) as img:
+                if img.mode != 'L':
+                    img = img.convert('L')
+                
+                # Simple edge detection using difference from median
+                img_array = np.array(img, dtype=np.float64)
+                median = np.median(img_array)
+                edges = np.abs(img_array - median) > 30  # Threshold
+                
+                return int(np.sum(edges))
+        except Exception as e:
+            logger.error(f"Edge counting failed: {e}")
+            return 0
+    
     def batch_analyze(self, image_paths: List[str]) -> Dict[str, Dict]:
-        """Analyze multiple images for sharpness with memory management."""
+        """Analyze multiple images safely."""
         results = {}
         
-        for i, path in enumerate(image_paths):
+        for i, path in enumerate(image_paths, 1):
             try:
-                print(f"  Analyzing sharpness {i+1}/{len(image_paths)}: {path}")
+                logger.info(f"Analyzing sharpness {i}/{len(image_paths)}: {os.path.basename(path)}")
                 results[path] = self.analyze_comprehensive(path)
                 
-                # Clean up memory periodically
-                if i % 5 == 0:
-                    import gc
+                # Force garbage collection every few images
+                if i % 3 == 0:
                     gc.collect()
-                    if torch.cuda.is_available():
-                        torch.cuda.empty_cache()
-                        
+                    
             except Exception as e:
-                print(f"  Error analyzing {path}: {e}")
+                logger.error(f"Error analyzing {path}: {e}")
                 results[path] = {
                     "image_path": path,
-                    "error": str(e),
+                    "analyses": [],
                     "overall_is_sharp": False,
-                    "confidence": 0.0
+                    "confidence": 0.0,
+                    "error": str(e)
                 }
-                
+        
         return results
+
+# Alias for backward compatibility
+SafeSharpnessAnalyzer = SharpnessAnalyzer
