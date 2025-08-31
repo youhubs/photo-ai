@@ -23,6 +23,9 @@ class SharpnessAnalyzer:
     def _init_models(self):
         """Initialize ML models for sharpness analysis."""
         try:
+            # Use CPU to avoid memory issues on macOS
+            self.device = torch.device("cpu")
+            
             self.extractor = AutoFeatureExtractor.from_pretrained(
                 self.config.models.sharpness_model
             )
@@ -30,6 +33,10 @@ class SharpnessAnalyzer:
                 self.config.models.sharpness_model
             ).to(self.device)
             self.model.eval()
+            
+            # Set conservative memory settings
+            torch.set_num_threads(2)  # Limit threads to prevent memory issues
+            
         except Exception as e:
             print(f"Warning: Could not load ML model for sharpness: {e}")
             self.extractor = None
@@ -129,8 +136,28 @@ class SharpnessAnalyzer:
         return results
 
     def batch_analyze(self, image_paths: List[str]) -> Dict[str, Dict]:
-        """Analyze multiple images for sharpness."""
+        """Analyze multiple images for sharpness with memory management."""
         results = {}
-        for path in image_paths:
-            results[path] = self.analyze_comprehensive(path)
+        
+        for i, path in enumerate(image_paths):
+            try:
+                print(f"  Analyzing sharpness {i+1}/{len(image_paths)}: {path}")
+                results[path] = self.analyze_comprehensive(path)
+                
+                # Clean up memory periodically
+                if i % 5 == 0:
+                    import gc
+                    gc.collect()
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                        
+            except Exception as e:
+                print(f"  Error analyzing {path}: {e}")
+                results[path] = {
+                    "image_path": path,
+                    "error": str(e),
+                    "overall_is_sharp": False,
+                    "confidence": 0.0
+                }
+                
         return results

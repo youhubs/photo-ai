@@ -10,7 +10,9 @@ from ..processors.quality.sharpness import SharpnessAnalyzer
 from ..processors.quality.duplicates import DuplicateDetector
 from ..processors.face.detector import FaceDetector
 from ..processors.face.visa_processor import VisaPhotoProcessor
+from ..processors.enhancement.auto_enhancer import AutoEnhancer
 from ..utils.image_utils import get_image_paths
+from ..utils.filename_generator import SmartFilenameGenerator
 
 
 class PhotoProcessor:
@@ -25,6 +27,8 @@ class PhotoProcessor:
         self.duplicate_detector = DuplicateDetector(self.config)
         self.face_detector = FaceDetector(self.config)
         self.visa_processor = VisaPhotoProcessor(self.config)
+        self.auto_enhancer = AutoEnhancer(self.config.__dict__)
+        self.filename_generator = SmartFilenameGenerator(self.config.__dict__)
 
     def process_photos_pipeline(self, input_dir: Optional[str] = None) -> Dict:
         """Run complete photo processing pipeline."""
@@ -203,3 +207,242 @@ class PhotoProcessor:
             stats["counts"]["best"] = 0
 
         return stats
+    
+    def process_sports_photos(self, input_dir: Optional[str] = None, output_dir: Optional[str] = None) -> Dict:
+        """
+        Complete sports photo processing pipeline with enhancement and smart naming.
+        
+        This method implements your specific requirements:
+        1. Filter bad photos (blur, poor exposure, out of focus)
+        2. Select best photos from similar groups
+        3. Automatically enhance good photos
+        4. Generate smart filenames with EXIF timestamps
+        5. Organize output with before/after structure
+        """
+        input_dir = input_dir or self.config.input_dir
+        output_dir = output_dir or os.path.join(input_dir, 'output')
+        
+        if not os.path.exists(input_dir):
+            return {"success": False, "error": f"Input directory does not exist: {input_dir}"}
+        
+        print(f"🏆 Processing sports photos from: {input_dir}")
+        print(f"📁 Output will be saved to: {output_dir}")
+        
+        # Create organized output structure
+        output_structure = self.filename_generator.generate_output_structure(output_dir)
+        
+        # Get all image paths
+        image_paths = get_image_paths(input_dir)
+        if not image_paths:
+            return {"success": False, "error": "No images found in input directory"}
+        
+        print(f"📸 Found {len(image_paths)} photos to process")
+        
+        results = {
+            "success": True,
+            "input_dir": input_dir,
+            "output_dir": output_dir,
+            "total_images": len(image_paths),
+            "processed_images": [],
+            "discarded_images": [],
+            "enhanced_images": [],
+            "statistics": {}
+        }
+        
+        # Stage 1: Filter bad photos
+        print(f"\\n🔍 Stage 1: Filtering bad photos...")
+        good_photos = []
+        discarded_photos = []
+        
+        for i, image_path in enumerate(image_paths, 1):
+            try:
+                print(f"  Analyzing {i}/{len(image_paths)}: {os.path.basename(image_path)}")
+                
+                # Check sharpness with error handling
+                try:
+                    sharpness_result = self.sharpness_analyzer.analyze_comprehensive(image_path)
+                    is_sharp = sharpness_result.get('overall_is_sharp', False)
+                except Exception as e:
+                    print(f"    Warning: Sharpness analysis failed: {e}")
+                    sharpness_result = {'overall_is_sharp': False, 'confidence': 0.0}
+                    is_sharp = False
+                
+                # Check motion blur with error handling
+                try:
+                    motion_blur_result = self.auto_enhancer.detect_motion_blur(image_path)
+                    has_motion_blur = motion_blur_result.get('has_motion_blur', False)
+                except Exception as e:
+                    print(f"    Warning: Motion blur detection failed: {e}")
+                    motion_blur_result = {'has_motion_blur': False}
+                    has_motion_blur = False
+                
+                # Check exposure with error handling  
+                try:
+                    exposure_result = self.auto_enhancer.detect_poor_exposure(image_path)
+                    has_poor_exposure = exposure_result.get('has_poor_exposure', False)
+                except Exception as e:
+                    print(f"    Warning: Exposure analysis failed: {e}")
+                    exposure_result = {'has_poor_exposure': False}
+                    has_poor_exposure = False
+                    
+                # Memory cleanup every few images
+                if i % 3 == 0:
+                    import gc
+                    gc.collect()
+            
+                # Decision logic
+                if is_sharp and not has_motion_blur and not has_poor_exposure:
+                    good_photos.append({
+                        'path': image_path,
+                        'sharpness_score': sharpness_result.get('confidence', 0),
+                        'quality_metrics': {
+                            'sharpness': sharpness_result,
+                            'motion_blur': motion_blur_result,
+                            'exposure': exposure_result
+                        }
+                    })
+                else:
+                    discarded_photos.append({
+                        'path': image_path,
+                        'reasons': [],
+                        'quality_metrics': {
+                            'sharpness': sharpness_result,
+                            'motion_blur': motion_blur_result,
+                            'exposure': exposure_result
+                        }
+                    })
+                    
+                    # Record discard reasons
+                    reasons = discarded_photos[-1]['reasons']
+                    if not is_sharp:
+                        reasons.append('not_sharp')
+                    if has_motion_blur:
+                        reasons.append('motion_blur')
+                    if has_poor_exposure:
+                        reasons.append('poor_exposure')
+                        
+            except Exception as e:
+                print(f"  Critical error processing {image_path}: {e}")
+                # Add to discarded photos with error reason
+                discarded_photos.append({
+                    'path': image_path,
+                    'reasons': ['processing_error'],
+                    'error': str(e),
+                    'quality_metrics': {}
+                })
+        
+        print(f"✅ Stage 1 complete: {len(good_photos)} good photos, {len(discarded_photos)} discarded")
+        
+        if not good_photos:
+            return {"success": False, "error": "No good quality photos found"}
+        
+        # Stage 2: Find similar photos and select best
+        print(f"\\n🎯 Stage 2: Selecting best photos from similar groups...")
+        
+        good_photo_paths = [photo['path'] for photo in good_photos]
+        duplicate_results = self.duplicate_detector.find_comprehensive_duplicates(good_photo_paths)
+        clusters = duplicate_results.get('clusters', {})
+        
+        # Select best photos from each cluster
+        selected_photos = []
+        for cluster_id, cluster_paths in clusters.items():
+            if cluster_id == -1:  # Unclustered (unique) photos - keep all
+                for path in cluster_paths:
+                    photo_data = next(p for p in good_photos if p['path'] == path)
+                    selected_photos.append(photo_data)
+            else:
+                # Find best photo in cluster
+                cluster_photos = [p for p in good_photos if p['path'] in cluster_paths]
+                best_photo = max(cluster_photos, key=lambda x: x['sharpness_score'])
+                selected_photos.append(best_photo)
+        
+        print(f"✅ Stage 2 complete: Selected {len(selected_photos)} best photos from {len(good_photos)} good photos")
+        
+        # Stage 3: Enhance selected photos
+        print(f"\\n✨ Stage 3: Enhancing selected photos...")
+        
+        enhanced_results = []
+        filename_mapping = {}
+        
+        for i, photo in enumerate(selected_photos, 1):
+            image_path = photo['path']
+            print(f"  Enhancing {i}/{len(selected_photos)}: {os.path.basename(image_path)}")
+            
+            # Generate smart filename
+            new_filename = self.filename_generator.generate_filename(
+                image_path, 
+                'best', 
+                photo['sharpness_score']
+            )
+            
+            # Enhance photo
+            enhanced_path = os.path.join(output_structure['enhanced_photos'], new_filename)
+            enhancement_result = self.auto_enhancer.enhance_photo(image_path, enhanced_path)
+            
+            if enhancement_result['success']:
+                enhanced_results.append({
+                    'original_path': image_path,
+                    'enhanced_path': enhanced_path,
+                    'new_filename': new_filename,
+                    'quality_score': photo['sharpness_score'],
+                    'enhancements': enhancement_result['enhancements'],
+                    'success': True
+                })
+                
+                # Also copy original to best_photos directory for comparison
+                best_photo_path = os.path.join(output_structure['best_photos'], new_filename)
+                shutil.copy2(image_path, best_photo_path)
+                
+            else:
+                enhanced_results.append({
+                    'original_path': image_path,
+                    'error': enhancement_result['error'],
+                    'success': False
+                })
+        
+        print(f"✅ Stage 3 complete: Enhanced {sum(1 for r in enhanced_results if r['success'])} photos")
+        
+        # Stage 4: Handle discarded photos
+        print(f"\\n🗑️ Stage 4: Organizing discarded photos...")
+        
+        for photo_data in discarded_photos:
+            image_path = photo_data['path']
+            filename = os.path.basename(image_path)
+            
+            # Create reason-based subdirectories
+            main_reason = photo_data['reasons'][0] if photo_data['reasons'] else 'unknown'
+            reason_dir = os.path.join(output_structure['discarded_photos'], main_reason)
+            os.makedirs(reason_dir, exist_ok=True)
+            
+            dest_path = os.path.join(reason_dir, filename)
+            shutil.copy2(image_path, dest_path)
+        
+        # Stage 5: Generate summary
+        print(f"\\n📊 Stage 5: Generating processing summary...")
+        
+        summary_path = self.filename_generator.create_processing_summary(enhanced_results, output_dir)
+        
+        # Update results
+        results.update({
+            "processed_images": enhanced_results,
+            "discarded_images": discarded_photos,
+            "enhanced_images": [r for r in enhanced_results if r['success']],
+            "statistics": {
+                "total_input": len(image_paths),
+                "good_quality": len(good_photos),
+                "selected_best": len(selected_photos),
+                "successfully_enhanced": sum(1 for r in enhanced_results if r['success']),
+                "discarded": len(discarded_photos),
+                "success_rate": len(selected_photos) / len(image_paths) * 100
+            },
+            "output_structure": output_structure,
+            "summary_file": summary_path
+        })
+        
+        print(f"\\n🎉 Sports photo processing complete!")
+        print(f"📊 Results: {results['statistics']['successfully_enhanced']}/{results['statistics']['total_input']} photos processed successfully ({results['statistics']['success_rate']:.1f}% success rate)")
+        print(f"📁 Enhanced photos: {output_structure['enhanced_photos']}")
+        print(f"📁 Original best photos: {output_structure['best_photos']}")
+        print(f"📄 Summary: {summary_path}")
+        
+        return results

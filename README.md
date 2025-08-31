@@ -5,18 +5,21 @@ Advanced photo processing and analysis toolkit with both **desktop GUI** and **c
 ## Features
 
 ### 🔍 **Smart Photo Analysis**
+
 - **Sharpness Detection**: Automatically identify blurry vs sharp photos using multiple algorithms
 - **Duplicate Detection**: Find exact duplicates and similar photos using perceptual hashing and deep learning
 - **Face Analysis**: Detect faces and validate photo quality for official documents
 - **Quality Assessment**: Comprehensive photo quality scoring and analysis
 
 ### 📋 **Automated Organization**
+
 - **Intelligent Sorting**: Automatically sort photos into good/bad quality folders
 - **Best Photo Selection**: Select the best photos from similar groups
 - **Time-based Clustering**: Group photos taken within time windows
 - **Batch Processing**: Process thousands of photos efficiently
 
 ### 🎯 **Specialized Processing**
+
 - **Visa Photo Creator**: Generate compliant visa/passport photos with precise dimensions
 - **Background Removal**: Smart background removal and replacement
 - **Face Detection**: Advanced face detection with quality validation
@@ -35,7 +38,6 @@ cd photo-ai
 pip install -e .
 
 # Alternative installation methods
-pip install -r requirements.txt          # Core dependencies only
 pip install -r requirements.txt           # All dependencies
 ```
 
@@ -52,6 +54,7 @@ python photo_ai_gui.py
 ```
 
 **GUI Features:**
+
 - 📁 **Photo Selection**: Browse folders or select individual files with drag & drop
 - 🖼️ **Built-in Viewer**: Photo viewer with thumbnails and navigation
 - ⚡ **Real-time Progress**: Visual progress tracking with status updates
@@ -81,6 +84,7 @@ photo-ai stats
 ## Command Reference
 
 ### Photo Processing
+
 ```bash
 # Full pipeline processing
 photo-ai process [directory] [--good-dir DIR] [--bad-dir DIR]
@@ -93,12 +97,14 @@ photo-ai stats
 ```
 
 ### Visa Photos
+
 ```bash
 # Create compliant visa photo (33×48mm, 300 DPI)
 photo-ai visa <input> [output] [--debug]
 ```
 
 ### Configuration
+
 ```bash
 # Environment variables
 export PHOTO_AI_INPUT_DIR="/path/to/input"
@@ -131,6 +137,7 @@ if visa_result['success']:
 ```
 
 ### Advanced Configuration
+
 ```python
 from photo_ai.core.config import Config
 
@@ -144,6 +151,7 @@ processor = PhotoProcessor(config)
 ```
 
 ### Individual Processors
+
 ```python
 from photo_ai.processors.quality.sharpness import SharpnessAnalyzer
 from photo_ai.processors.face.detector import FaceDetector
@@ -164,6 +172,7 @@ print(f"Found {faces['face_count']} faces")
 ## Technical Details
 
 ### Algorithms Used
+
 - **Sharpness Detection**: Laplacian variance, gradient analysis, and ResNet-based ML models
 - **Feature Extraction**: Vision Transformer (ViT) for deep image features
 - **Clustering**: DBSCAN for grouping similar photos
@@ -171,6 +180,7 @@ print(f"Found {faces['face_count']} faces")
 - **Background Removal**: GrabCut algorithm with intelligent masking
 
 ### Requirements
+
 - **Python**: 3.8+
 - **Memory**: 4GB+ RAM recommended for large batches
 - **GPU**: Optional CUDA support for faster processing
@@ -178,13 +188,14 @@ print(f"Found {faces['face_count']} faces")
 - **Display**: For GUI - any modern desktop environment (Windows/macOS/Linux)
 
 ### Supported Formats
+
 - **Input**: JPG, JPEG, PNG, WebP, BMP, TIFF
 - **Output**: JPG (high quality), PNG for transparency
 - **Metadata**: EXIF data preserved where possible
 
 ## Project Structure
 
-```
+```text
 photo_ai/
 ├── core/                   # Core processing logic
 │   ├── config.py          # Configuration management
@@ -207,31 +218,37 @@ photo_ai/
 ### Common Issues
 
 **"No face detected"**
+
 - Ensure photo shows a clear frontal face
 - Face should occupy 25-45% of image height
 - Use good lighting and avoid shadows
 
 **"Image too small"**
+
 - Minimum resolution: 1600x1200 pixels
 - Higher resolution recommended for visa photos
 - Resize image before processing
 
 **"Model loading failed"**
+
 - Check internet connection for initial model download
 - Models are cached locally after first use
 - ~2GB storage needed for all models
 
 **GUI Not Starting**
+
 - Ensure PyQt6 is installed: `pip install PyQt6`
 - Check display environment variables on Linux
 - Try running: `python photo_ai_gui.py` for direct execution
 
 **Processing Stuck/Slow**
+
 - Check system resources (CPU/Memory usage)
 - Try smaller batch sizes in GUI settings
 - Verify internet connection for initial model downloads
 
 ### Debug Mode
+
 ```bash
 # Command line debug
 photo-ai visa input.jpg output.jpg --debug
@@ -257,6 +274,7 @@ pip install pyinstaller
 ### 🚀 **Quick Build**
 
 **PyInstaller Build:**
+
 ```bash
 # Cross-platform build script
 python scripts/build.py pyinstaller --clean
@@ -272,6 +290,7 @@ make build-pyinstaller
 ### 📦 **Distribution Packages**
 
 **Windows:**
+
 ```bash
 # Create standalone executable
 make package-windows
@@ -280,6 +299,7 @@ make package-windows
 ```
 
 **macOS:**
+
 ```bash
 # Create app bundle and DMG
 make package-macos
@@ -288,6 +308,7 @@ make package-macos
 ```
 
 **Linux:**
+
 ```bash
 # Create AppImage/packages  
 make package-linux
@@ -328,16 +349,19 @@ make run-cli        # Launch CLI version
 ### 📋 **Platform-Specific Notes**
 
 **Windows:**
+
 - Requires Visual Studio Build Tools for some dependencies
 - Windows Defender may flag executables (whitelist needed)
 - Consider code signing for distribution
 
 **macOS:**  
+
 - Requires Xcode Command Line Tools: `xcode-select --install`
 - App notarization needed for distribution outside App Store
 - DMG creation: `hdiutil create -srcfolder dist/ PhotoAI.dmg`
 
 **Linux:**
+
 - GTK development libraries: `sudo apt install libgtk-3-dev`
 - Different package formats: AppImage, deb, rpm
 - Consider Flatpak/Snap for universal distribution
@@ -353,6 +377,7 @@ make run-cli        # Launch CLI version
 ### Development Setup
 
 **🚀 Quick Setup (Recommended):**
+
 ```bash
 # Automated setup with virtual environment
 python scripts/setup.py
@@ -366,6 +391,7 @@ make setup-full
 ```
 
 **🔧 Manual Setup:**
+
 ```bash
 # 1. Create virtual environment
 python -m venv .venv
@@ -381,6 +407,7 @@ python -c "import photo_ai; print('✅ Setup successful!')"
 ```
 
 **🛠️ Development Commands:**
+
 ```bash
 # Run tests
 pytest
@@ -399,6 +426,7 @@ make build-pyinstaller
 ```
 
 ### GUI Development
+
 - Built with **PyQt6** for cross-platform compatibility
 - Modern dark theme with professional styling
 - Threaded processing to maintain UI responsiveness
