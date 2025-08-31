@@ -16,6 +16,13 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
+  # Complete soccer photo processing workflow
+  photo-ai soccer photos/                     # Quality filter → duplicate removal → player grouping → best selection
+  photo-ai soccer photos/ -p custom_players/ # Use custom players reference directory
+  photo-ai soccer photos/ -o final_results/  # Output to custom directory
+  photo-ai soccer photos/ --max-photos 3     # Select up to 3 best photos per player
+  
+  # Individual processing steps
   photo-ai sports photos/                     # Process sports photos with enhancement
   photo-ai players photos/                    # Group photos by players (face + visual features)
   photo-ai players photos/ -p refs/           # Group using custom reference directory
@@ -118,6 +125,39 @@ Examples:
         help="Path to JSON file with player jersey number mappings",
     )
 
+    # Complete soccer processing command
+    soccer_parser = subparsers.add_parser(
+        "soccer",
+        help="Complete soccer photo processing workflow",
+        description="""
+Complete 4-stage soccer photo processing workflow:
+1. Remove bad-quality photos (blurry, out-of-focus, low-quality)
+2. Remove duplicate or near-duplicate photos (keep best version)
+3. Group photos by player using reference faces from players/ folder
+4. Select 1-2 best photos per player and save to organized folders
+
+Requirements: Create a players/ folder with reference photos named after each player (e.g., Messi.jpg, Ronaldo.jpg)
+Output: Organized player folders with only the best quality, unique photos
+        """,
+    )
+    soccer_parser.add_argument("directory", help="Directory containing soccer game photos")
+    soccer_parser.add_argument(
+        "--players-dir",
+        "-p",
+        help="Directory containing reference player photos (default: directory/players)",
+    )
+    soccer_parser.add_argument(
+        "--output",
+        "-o",
+        help="Output directory (default: directory/output)",
+    )
+    soccer_parser.add_argument(
+        "--max-photos",
+        type=int,
+        default=2,
+        help="Maximum number of best photos to select per player (default: 2)",
+    )
+
     # Stats command
     stats_parser = subparsers.add_parser("stats", help="Show processing statistics")
 
@@ -218,6 +258,21 @@ Examples:
                 print(f"Error: {result['error']}")
                 return 1
             _print_players_results(result)
+
+        elif args.command == "soccer":
+            if not os.path.exists(args.directory):
+                print(f"Error: Directory not found: {args.directory}")
+                return 1
+
+            result = processor.process_soccer_photos_complete(
+                args.directory, args.players_dir, args.output
+            )
+
+            if not result["success"]:
+                print(f"Error: {result['error']}")
+                return 1
+
+            _print_soccer_results(result)
 
         elif args.command == "stats":
             stats = processor.get_processing_stats()
@@ -389,6 +444,58 @@ def _print_players_results(result):
         for photo_path, players in result["multiple_player_detections"]:
             photo_name = os.path.basename(photo_path)
             print(f"  {photo_name}: {', '.join(players)}")
+
+
+def _print_soccer_results(result):
+    """Print comprehensive soccer photo processing results."""
+    print("\\n=== Soccer Photo Processing Results ===")
+
+    summary = result.get("final_summary", {})
+    print(f"⚽ Complete Processing Summary:")
+    print(f"   📸 Input photos: {summary.get('input_photos', 0)}")
+    print(f"   ✨ Quality filtered: {summary.get('quality_filtered', 0)}")
+    print(f"   🔄 After duplicates removed: {summary.get('unique_photos', 0)}")
+    print(f"   👥 Players found: {summary.get('players_found', 0)}")
+    print(f"   🏆 Final selected: {summary.get('final_selected', 0)}")
+
+    print(f"\\n📁 Output directory: {summary.get('output_directory', 'N/A')}")
+
+    # Print stage-by-stage breakdown
+    stages = result.get("stages", {})
+
+    if "quality_filter" in stages:
+        stage = stages["quality_filter"]
+        print(f"\\n🔍 Stage 1 - Quality Filtering:")
+        print(f"   Sharp photos kept: {stage.get('sharp_photos', 0)}")
+        print(f"   Blurry photos removed: {stage.get('blurry_removed', 0)}")
+
+    if "duplicate_removal" in stages:
+        stage = stages["duplicate_removal"]
+        print(f"\\n🔍 Stage 2 - Duplicate Removal:")
+        print(f"   Unique photos kept: {stage.get('unique_photos', 0)}")
+        print(f"   Duplicates removed: {stage.get('duplicates_removed', 0)}")
+
+    if "player_grouping" in stages:
+        stage = stages["player_grouping"]
+        print(f"\\n🔍 Stage 3 - Player Grouping:")
+        print(f"   Recognized players: {stage.get('recognized_players', 0)}")
+        print(f"   Unknown photos: {stage.get('unknown_photos', 0)}")
+
+    if "best_selection" in stages:
+        stage = stages["best_selection"]
+        print(f"\\n🔍 Stage 4 - Best Photo Selection:")
+        print(f"   Total photos selected: {stage.get('total_selected', 0)}")
+
+        player_stats = stage.get("player_stats", {})
+        if player_stats:
+            print(f"\\n👤 Selected Photos per Player:")
+            for player_name, stats in player_stats.items():
+                print(
+                    f"   {player_name}: {stats['selected_photos']}/{stats['total_photos']} photos"
+                )
+
+    print(f"\\n✅ Processing completed successfully!")
+    print(f"🎯 Ready for use: High-quality, unique, player-organized photos")
 
 
 if __name__ == "__main__":

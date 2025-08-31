@@ -784,7 +784,9 @@ class PlayerGroupingProcessor:
         # Look up player by jersey number
         return self.jersey_to_player.get(jersey_number)
 
-    def _process_photo_batch(self, photo_paths: List[str], batch_id: int, total_batches: int) -> Dict:
+    def _process_photo_batch(
+        self, photo_paths: List[str], batch_id: int, total_batches: int
+    ) -> Dict:
         """
         Process a batch of photos for player matching with thread safety.
 
@@ -807,30 +809,32 @@ class PlayerGroupingProcessor:
                 # Load image manually to avoid potential threading issues
                 import face_recognition
                 import cv2
-                
+
                 try:
                     # Load image safely
                     image = cv2.imread(photo_path)
                     if image is None:
                         batch_results["unknown_photos"].append(photo_path)
                         continue
-                    
+
                     # Convert BGR to RGB for face_recognition
                     rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-                    
+
                     # Detect faces with thread-safe face_recognition calls
-                    face_locations = face_recognition.face_locations(rgb_image, model="hog")  # hog is more stable in threads
-                    
+                    face_locations = face_recognition.face_locations(
+                        rgb_image, model="hog"
+                    )  # hog is more stable in threads
+
                     if len(face_locations) > 0:
                         # Get face encodings
                         face_encodings = face_recognition.face_encodings(rgb_image, face_locations)
-                        
+
                         # Process first 3 faces for speed
                         for face_encoding in face_encodings[:3]:
                             matched_player = self._match_face_to_player_safe(face_encoding)
                             if matched_player:
                                 matched_players.add(matched_player)
-                    
+
                     # If no faces found, try alternative matching
                     if not matched_players:
                         if self.enable_jersey_number_matching:

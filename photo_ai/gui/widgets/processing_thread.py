@@ -21,7 +21,7 @@ class ProcessingThread(QThread):
         super().__init__()
         self.processor = processor
         self.input_source = input_source
-        self.operation = operation  # 'process', 'analyze', 'visa', 'player_grouping', 'quality', 'duplicates', 'selection'
+        self.operation = operation  # 'process', 'analyze', 'visa', 'player_grouping', 'quality', 'duplicates', 'selection', 'best_selection'
 
     def run(self):
         """Execute the processing operation."""
@@ -40,6 +40,8 @@ class ProcessingThread(QThread):
                 self.run_duplicates_step()
             elif self.operation == "selection":
                 self.run_selection_step()
+            elif self.operation == "best_selection":
+                self.run_best_selection_step()
             else:
                 raise ValueError(f"Unknown operation: {self.operation}")
 
@@ -213,8 +215,8 @@ class ProcessingThread(QThread):
             self.error_occurred.emit(f"Player grouping failed: {str(e)}")
 
     def run_quality_step(self):
-        """Run quality analysis step only."""
-        self.status_updated.emit("Starting quality analysis...")
+        """Run quality analysis step only - removes bad-quality photos."""
+        self.status_updated.emit("Starting quality filtering...")
         self.progress_updated.emit(0)
 
         try:
@@ -230,44 +232,59 @@ class ProcessingThread(QThread):
                 return
 
             total_images = len(image_paths)
-            self.status_updated.emit(f"Analyzing {total_images} photos...")
+            self.status_updated.emit(f"Filtering {total_images} photos for quality...")
 
-            # Perform sharpness analysis with progress updates
-            self.progress_updated.emit(10)
-            self.status_updated.emit("Analyzing sharpness...")
-            sharpness_results = self.processor.sharpness_analyzer.batch_analyze(image_paths)
+            # Perform ONLY sharpness analysis to identify bad-quality photos
+            self.progress_updated.emit(20)
+            self.status_updated.emit("Analyzing photo sharpness and quality...")
 
-            self.progress_updated.emit(40)
-            self.status_updated.emit("Detecting duplicates...")
-            duplicate_results = self.processor.duplicate_detector.find_comprehensive_duplicates(
-                image_paths
-            )
+            sharpness_results = {}
+            sharp_photos = []
+            blurry_photos = []
 
-            self.progress_updated.emit(70)
-            self.status_updated.emit("Analyzing faces...")
+            for i, image_path in enumerate(image_paths):
+                try:
+                    analysis = self.processor.sharpness_analyzer.analyze_image(image_path)
+                    sharpness_results[image_path] = analysis
 
-            # Analyze faces with incremental progress
-            face_results = {}
-            for i, path in enumerate(image_paths):
-                face_results[path] = self.processor.face_detector.analyze_face_quality(path)
-                # Update progress incrementally during face analysis (70% to 95%)
-                face_progress = 70 + int((i + 1) / total_images * 25)
-                self.progress_updated.emit(face_progress)
-                self.status_updated.emit(f"Analyzing faces... ({i+1}/{total_images})")
+                    if analysis.get("overall_is_sharp", False):
+                        sharp_photos.append(image_path)
+                    else:
+                        blurry_photos.append(image_path)
 
-            # Compile results
+                    # Update progress (20% to 90%)
+                    progress = 20 + int((i + 1) / total_images * 70)
+                    self.progress_updated.emit(progress)
+
+                    if (i + 1) % 5 == 0:  # Update status every 5 photos
+                        self.status_updated.emit(
+                            f"Analyzed {i+1}/{total_images} photos for quality..."
+                        )
+
+                except Exception as e:
+                    # If analysis fails, treat as blurry/bad quality
+                    blurry_photos.append(image_path)
+                    continue
+
+            # Compile results - focused on quality filtering only
             results = {
+                "success": True,
+                "total_images": total_images,
                 "sharpness": sharpness_results,
-                "duplicates": duplicate_results,
-                "faces": face_results,
+                "sharp_photos": sharp_photos,
+                "blurry_photos": blurry_photos,
+                "sharp_count": len(sharp_photos),
+                "blurry_count": len(blurry_photos),
             }
 
             self.progress_updated.emit(100)
-            self.status_updated.emit("Quality analysis completed!")
+            self.status_updated.emit(
+                f"Quality filtering completed! {len(sharp_photos)} sharp photos, {len(blurry_photos)} blurry photos removed"
+            )
             self.finished_processing.emit(results)
 
         except Exception as e:
-            self.error_occurred.emit(f"Quality analysis failed: {str(e)}")
+            self.error_occurred.emit(f"Quality filtering failed: {str(e)}")
 
     def run_duplicates_step(self):
         """Run duplicate detection step only."""
@@ -348,3 +365,32 @@ class ProcessingThread(QThread):
 
         except Exception as e:
             self.error_occurred.emit(f"Photo selection failed: {str(e)}")
+
+    def run_best_selection_step(self):
+        """Run best photo selection per player step - requires player grouping to be completed."""
+        self.status_updated.emit("Starting best photo selection per player...")
+        self.progress_updated.emit(0)
+
+        try:
+            # This step requires the complete soccer workflow as it needs:
+            # 1. Quality filtered photos
+            # 2. Duplicate-free photos  
+            # 3. Player grouping completed
+            # 4. Then select best photos per player
+
+            # For now, show a message that this requires the complete workflow
+            self.status_updated.emit("Best photo selection requires complete workflow...")
+            self.progress_updated.emit(50)
+
+            results = {
+                "success": False,
+                "error": "Best photo selection per player requires running the complete soccer workflow. Use the 'soccer' command instead of individual steps for the full 4-stage process.",
+                "message": "To select best photos per player:\n1. Use 'photo-ai soccer your_photos/'\n2. This will run all 4 stages automatically"
+            }
+
+            self.progress_updated.emit(100)
+            self.status_updated.emit("Best photo selection step requires complete workflow")
+            self.finished_processing.emit(results)
+
+        except Exception as e:
+            self.error_occurred.emit(f"Best photo selection failed: {str(e)}")

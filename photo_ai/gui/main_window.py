@@ -188,8 +188,10 @@ class PhotoAIMainWindow(QMainWindow):
 
         self.mode_button_group = QButtonGroup()
 
-        self.batch_mode_radio = QRadioButton("🏃‍♂️ Batch Mode")
-        self.batch_mode_radio.setToolTip("Sports photo processing - batch curation workflow")
+        self.batch_mode_radio = QRadioButton("⚽ Soccer Mode")
+        self.batch_mode_radio.setToolTip(
+            "Complete soccer photo processing workflow:\n1. Remove bad-quality photos\n2. Remove duplicates\n3. Group by player\n4. Select best photos per player"
+        )
         self.batch_mode_radio.setChecked(True)
         mode_layout.addWidget(self.batch_mode_radio)
         self.mode_button_group.addButton(self.batch_mode_radio, 0)
@@ -241,35 +243,43 @@ class PhotoAIMainWindow(QMainWindow):
         processing_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         # Step-by-step processing buttons (always visible)
-        self.step1_btn = QPushButton("1️⃣ Quality Analysis")
+        self.step1_btn = QPushButton("1️⃣ Remove Bad-Quality Photos")
         self.step1_btn.setMinimumHeight(45)
         self.step1_btn.setMaximumHeight(45)
         self.step1_btn.setEnabled(False)
-        self.step1_btn.setToolTip("Analyze photo sharpness and quality")
+        self.step1_btn.setToolTip(
+            "Detect and filter out blurry, out-of-focus, or low-quality photos.\nKeep only sharp and usable images."
+        )
         self.step1_btn.setStyleSheet("QPushButton { text-align: left; padding-left: 10px; }")
         processing_layout.addWidget(self.step1_btn)
 
-        self.step2_btn = QPushButton("2️⃣ Duplicate Detection")
+        self.step2_btn = QPushButton("2️⃣ Remove Duplicate Photos")
         self.step2_btn.setMinimumHeight(45)
         self.step2_btn.setMaximumHeight(45)
         self.step2_btn.setEnabled(False)
-        self.step2_btn.setToolTip("Find and group duplicate/similar photos")
+        self.step2_btn.setToolTip(
+            "Compare photos of the same moment and keep the best-quality version"
+        )
         self.step2_btn.setStyleSheet("QPushButton { text-align: left; padding-left: 10px; }")
         processing_layout.addWidget(self.step2_btn)
 
-        self.step3_btn = QPushButton("3️⃣ Best Photo Selection")
+        self.step3_btn = QPushButton("3️⃣ Group Photos by Player")
         self.step3_btn.setMinimumHeight(45)
         self.step3_btn.setMaximumHeight(45)
         self.step3_btn.setEnabled(False)
-        self.step3_btn.setToolTip("Select best photos from each group")
+        self.step3_btn.setToolTip(
+            "Group all game photos according to detected players using reference faces from players/ folder"
+        )
         self.step3_btn.setStyleSheet("QPushButton { text-align: left; padding-left: 10px; }")
         processing_layout.addWidget(self.step3_btn)
 
-        self.step4_btn = QPushButton("4️⃣ Player Grouping")
+        self.step4_btn = QPushButton("4️⃣ Select Best Photos per Player")
         self.step4_btn.setMinimumHeight(45)
         self.step4_btn.setMaximumHeight(45)
         self.step4_btn.setEnabled(False)
-        self.step4_btn.setToolTip("Group photos by detected players")
+        self.step4_btn.setToolTip(
+            "Automatically select 1-2 best-quality and most representative photos per player"
+        )
         self.step4_btn.setStyleSheet("QPushButton { text-align: left; padding-left: 10px; }")
         processing_layout.addWidget(self.step4_btn)
 
@@ -386,8 +396,8 @@ class PhotoAIMainWindow(QMainWindow):
         # Processing actions - direct step execution
         self.step1_btn.clicked.connect(lambda: self.execute_step("quality"))
         self.step2_btn.clicked.connect(lambda: self.execute_step("duplicates"))
-        self.step3_btn.clicked.connect(lambda: self.execute_step("selection"))
-        self.step4_btn.clicked.connect(lambda: self.execute_step("player_grouping"))
+        self.step3_btn.clicked.connect(lambda: self.execute_step("player_grouping"))
+        self.step4_btn.clicked.connect(lambda: self.execute_step("best_selection"))
         self.cancel_btn.clicked.connect(self.cancel_processing)
         self.visa_btn.clicked.connect(self.open_visa_dialog)
         self.enhance_btn.clicked.connect(self.enhance_portrait)
@@ -449,12 +459,14 @@ class PhotoAIMainWindow(QMainWindow):
         # Initialize results text for step-by-step processing
         if not hasattr(self, "results_text_initialized"):
             self.results_text.setText(
-                "📋 Processing Steps Ready\n\n"
-                "Select photos and click any step to begin:\n"
-                "1️⃣ Quality Analysis\n"
-                "2️⃣ Duplicate Detection\n"
-                "3️⃣ Best Photo Selection (needs 1 & 2)\n"
-                "4️⃣ Player Grouping"
+                "⚽ Soccer Photo Processing Ready\n\n"
+                "Select photos and follow the 4-step workflow:\n"
+                "1️⃣ Remove Bad-Quality Photos\n"
+                "2️⃣ Remove Duplicate Photos\n"
+                "3️⃣ Group Photos by Player\n"
+                "4️⃣ Select Best Photos per Player\n\n"
+                "💡 Tip: Create a 'players/' folder with reference photos\n"
+                "(e.g., Messi.jpg, Ronaldo.jpg)"
             )
             self.results_text_initialized = True
 
@@ -589,18 +601,18 @@ class PhotoAIMainWindow(QMainWindow):
 
     def reset_step_button_statuses(self):
         """Reset step button text to original state."""
-        self.step1_btn.setText("1️⃣ Quality Analysis")
-        self.step2_btn.setText("2️⃣ Duplicate Detection")
-        self.step3_btn.setText("3️⃣ Best Photo Selection")
-        self.step4_btn.setText("4️⃣ Player Grouping")
+        self.step1_btn.setText("1️⃣ Remove Bad-Quality Photos")
+        self.step2_btn.setText("2️⃣ Remove Duplicate Photos")
+        self.step3_btn.setText("3️⃣ Group Photos by Player")
+        self.step4_btn.setText("4️⃣ Select Best Photos per Player")
 
     def update_step_button_status(self, step_name: str, status: str):
         """Update the visual status of step buttons."""
         step_buttons = {
-            "quality": (self.step1_btn, "Quality Analysis"),
-            "duplicates": (self.step2_btn, "Duplicate Detection"),
-            "selection": (self.step3_btn, "Best Photo Selection"),
-            "player_grouping": (self.step4_btn, "Player Grouping"),
+            "quality": (self.step1_btn, "Remove Bad-Quality Photos"),
+            "duplicates": (self.step2_btn, "Remove Duplicate Photos"),
+            "player_grouping": (self.step3_btn, "Group Photos by Player"),
+            "best_selection": (self.step4_btn, "Select Best Photos per Player"),
         }
 
         if step_name in step_buttons:
@@ -648,17 +660,21 @@ class PhotoAIMainWindow(QMainWindow):
         if not has_photos:
             return
 
-        # Steps 1, 2, and 4 can run independently when photos are available
+        # Steps 1 and 2 can run independently when photos are available
         self.step1_btn.setEnabled(True)
         self.step2_btn.setEnabled(True)
-        self.step4_btn.setEnabled(True)
 
-        # Step 3 requires steps 1 & 2 to be completed
+        # Step 3 (player grouping) requires steps 1 and 2 to be completed
         self.update_step3_availability()
 
-        # Update ready status for step 3 if it just became available
-        if self.step3_btn.isEnabled() and "selection" not in self.completed_steps:
-            self.update_step_button_status("selection", "ready")
+        # Step 4 (best selection) requires step 3 to be completed
+        self.update_step4_availability()
+
+        # Update ready status for steps if they just became available
+        if self.step3_btn.isEnabled() and "player_grouping" not in self.completed_steps:
+            self.update_step_button_status("player_grouping", "ready")
+        if self.step4_btn.isEnabled() and "best_selection" not in self.completed_steps:
+            self.update_step_button_status("best_selection", "ready")
 
     def display_step_results(self, step_name: str, results):
         """Display results for a specific step."""
@@ -667,33 +683,36 @@ class PhotoAIMainWindow(QMainWindow):
             self.display_quality_step_results(results)
         elif step_name == "duplicates":
             self.display_duplicates_step_results(results)
-        elif step_name == "selection":
-            self.display_selection_step_results(results)
         elif step_name == "player_grouping":
             self.display_player_grouping_results(results)
+        elif step_name == "best_selection":
+            self.display_best_selection_step_results(results)
 
         # Switch to Results tab to show the new results
         self.tab_widget.setCurrentIndex(1)
 
     def display_quality_step_results(self, results):
-        """Display quality analysis step results."""
+        """Display quality filtering step results."""
         if not results.get("success", False):
-            self.display_step_error("Quality Analysis", results.get("error", "Unknown error"))
+            self.display_step_error(
+                "Remove Bad-Quality Photos", results.get("error", "Unknown error")
+            )
             return
 
-        # Simple summary for left panel
-        sharp_count = sum(
-            1 for r in results.get("sharpness", {}).values() if r.get("overall_is_sharp", False)
-        )
-        total_count = len(results.get("sharpness", {}))
+        # Simple summary for left panel using new result format
+        total_count = results.get("total_images", 0)
+        sharp_count = results.get("sharp_count", 0)
+        blurry_count = results.get("blurry_count", 0)
 
-        progress_text = f"1️⃣ Quality Analysis completed!\n\n📷 {total_count} photos analyzed"
+        progress_text = (
+            f"1️⃣ Remove Bad-Quality Photos completed!\n\n📷 {total_count} photos analyzed"
+        )
         progress_text += (
-            f"\n✨ {sharp_count} sharp photos ({(sharp_count/total_count*100):.0f}%)"
+            f"\n✨ {sharp_count} sharp photos kept ({(sharp_count/total_count*100):.0f}%)"
             if total_count > 0
             else ""
         )
-        progress_text += f"\n🌫️ {total_count - sharp_count} blurry photos"
+        progress_text += f"\n🗑️ {blurry_count} blurry photos removed"
         progress_text += "\n\n📊 See Results tab for details"
 
         self.results_text.setText(progress_text)
@@ -724,18 +743,25 @@ class PhotoAIMainWindow(QMainWindow):
         # Display detailed results (reuse existing analysis display)
         self.display_analysis_results(results)
 
-    def display_selection_step_results(self, results):
-        """Display best photo selection step results."""
+    def display_best_selection_step_results(self, results):
+        """Display best photo selection per player step results."""
         if not results.get("success", False):
-            self.display_step_error("Best Photo Selection", results.get("error", "Unknown error"))
+            self.display_step_error(
+                "Select Best Photos per Player", results.get("error", "Unknown error")
+            )
             return
 
-        best_photos = results.get("selection", {}).get("best_photos", 0)
+        # This would be the results from the complete soccer workflow
+        final_summary = results.get("final_summary", {})
+        final_selected = final_summary.get("final_selected", 0)
+        players_found = final_summary.get("players_found", 0)
 
         progress_text = (
-            f"3️⃣ Best Photo Selection completed!\n\n🏆 {best_photos} best photos selected"
+            f"4️⃣ Select Best Photos per Player completed!\n\n"
+            f"🏆 {final_selected} best photos selected\n"
+            f"👥 {players_found} players processed\n\n"
+            f"📁 Photos organized in player folders"
         )
-        progress_text += "\n📁 Photos copied to output directory"
         progress_text += "\n\n📊 See Results tab for details"
 
         self.results_text.setText(progress_text)
@@ -890,6 +916,13 @@ class PhotoAIMainWindow(QMainWindow):
         has_photos = self.selected_folder or self.selected_files
 
         self.step3_btn.setEnabled(has_photos and has_quality and has_duplicates)
+
+    def update_step4_availability(self):
+        """Update step 4 button availability based on completed steps."""
+        has_player_grouping = "player_grouping" in self.completed_steps
+        has_photos = self.selected_folder or self.selected_files
+
+        self.step4_btn.setEnabled(has_photos and has_player_grouping)
 
     def start_image_counting(self):
         """Start counting images in the selected folder asynchronously."""

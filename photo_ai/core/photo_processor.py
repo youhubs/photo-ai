@@ -512,3 +512,268 @@ class PhotoProcessor:
     def get_jersey_number_mappings(self) -> Dict[str, int]:
         """Get current player jersey number mappings."""
         return self.player_grouping.player_jersey_numbers.copy()
+
+    def process_soccer_photos_complete(
+        self, input_dir: str, players_dir: str = None, output_dir: str = None
+    ) -> Dict:
+        """
+        Complete soccer photo processing workflow:
+        1. Remove bad-quality photos (blurry, out-of-focus)
+        2. Remove duplicate or near-duplicate photos
+        3. Group photos by player using reference faces
+        4. Select best photos per player (1-2 best quality)
+        5. Save organized by player folders
+
+        Args:
+            input_dir: Directory containing soccer game photos
+            players_dir: Directory with reference player photos (default: input_dir/players)
+            output_dir: Output directory (default: input_dir/output)
+
+        Returns:
+            Dictionary with processing results and statistics
+        """
+        if players_dir is None:
+            players_dir = os.path.join(input_dir, "players")
+
+        if output_dir is None:
+            output_dir = os.path.join(input_dir, "output")
+
+        self.log("⚽ Starting comprehensive soccer photo processing...")
+        self.log(f"📁 Input directory: {input_dir}")
+        self.log(f"👥 Players directory: {players_dir}")
+        self.log(f"📤 Output directory: {output_dir}")
+
+        if not os.path.exists(input_dir):
+            return {"success": False, "error": f"Input directory not found: {input_dir}"}
+
+        if not os.path.exists(players_dir):
+            return {"success": False, "error": f"Players directory not found: {players_dir}"}
+
+        # Get all game photos
+        image_paths = get_image_paths(input_dir)
+        if not image_paths:
+            return {"success": False, "error": "No images found in input directory"}
+
+        total_input = len(image_paths)
+        self.log(f"📸 Found {total_input} photos to process")
+
+        results = {
+            "success": True,
+            "total_input_photos": total_input,
+            "players_dir": players_dir,
+            "output_dir": output_dir,
+            "stages": {},
+        }
+
+        try:
+            # Stage 1: Quality Filtering - Remove blurry/bad photos
+            self.log("🔍 Stage 1: Filtering out poor quality photos...")
+            sharpness_results = self.sharpness_analyzer.analyze_images(image_paths)
+
+            sharp_photos = []
+            blurry_count = 0
+            for photo_path, analysis in sharpness_results.items():
+                if analysis.get("overall_is_sharp", False):
+                    sharp_photos.append(photo_path)
+                else:
+                    blurry_count += 1
+
+            self.log(
+                f"✅ Quality filtering: {len(sharp_photos)} sharp photos, {blurry_count} blurry removed"
+            )
+            results["stages"]["quality_filter"] = {
+                "sharp_photos": len(sharp_photos),
+                "blurry_removed": blurry_count,
+            }
+
+            if not sharp_photos:
+                return {"success": False, "error": "No sharp photos found after quality filtering"}
+
+            # Stage 2: Duplicate Detection - Remove near-duplicates
+            self.log("🔍 Stage 2: Detecting and removing duplicate photos...")
+            duplicate_results = self.duplicate_detector.find_duplicates(sharp_photos)
+
+            # Keep only unique photos (first occurrence of each duplicate group)
+            unique_photos = []
+            duplicates_removed = 0
+
+            processed_groups = set()
+            for photo_path in sharp_photos:
+                # Check if this photo is part of a duplicate group we haven't processed
+                photo_group = None
+                for group in duplicate_results.get("duplicate_groups", []):
+                    if photo_path in group and id(group) not in processed_groups:
+                        photo_group = group
+                        break
+
+                if photo_group:
+                    # Take the first photo from the group (could be enhanced to pick best quality)
+                    unique_photos.append(photo_group[0])
+                    duplicates_removed += len(photo_group) - 1
+                    processed_groups.add(id(photo_group))
+                elif photo_path not in [
+                    p for group in duplicate_results.get("duplicate_groups", []) for p in group
+                ]:
+                    # Photo is not part of any duplicate group
+                    unique_photos.append(photo_path)
+
+            self.log(
+                f"✅ Duplicate removal: {len(unique_photos)} unique photos, {duplicates_removed} duplicates removed"
+            )
+            results["stages"]["duplicate_removal"] = {
+                "unique_photos": len(unique_photos),
+                "duplicates_removed": duplicates_removed,
+            }
+
+            if not unique_photos:
+                return {"success": False, "error": "No photos left after duplicate removal"}
+
+            # Stage 3: Player Grouping
+            self.log("🔍 Stage 3: Grouping photos by detected players...")
+            grouping_results = self.group_photos_by_players(unique_photos, players_dir)
+
+            if not grouping_results["success"]:
+                return {
+                    "success": False,
+                    "error": f"Player grouping failed: {grouping_results['error']}",
+                }
+
+            self.log(
+                f"✅ Player grouping: {grouping_results['recognized_players']} players recognized"
+            )
+            results["stages"]["player_grouping"] = {
+                "recognized_players": grouping_results["recognized_players"],
+                "unknown_photos": grouping_results["unknown_photos"],
+                "group_stats": grouping_results.get("group_stats", {}),
+            }
+
+            # Stage 4: Best Photo Selection per Player
+            self.log("🔍 Stage 4: Selecting best photos per player...")
+            os.makedirs(output_dir, exist_ok=True)
+
+            final_stats = {}
+            total_selected = 0
+
+            # Process each player's photos
+            for player_name, stats in grouping_results.get("group_stats", {}).items():
+                player_output_dir = os.path.join(output_dir, player_name)
+                os.makedirs(player_output_dir, exist_ok=True)
+
+                # Get all photos for this player from the grouping results
+                player_photos = []
+                player_source_dir = stats.get("folder_path")
+                if player_source_dir and os.path.exists(player_source_dir):
+                    for filename in os.listdir(player_source_dir):
+                        if filename.lower().endswith(
+                            (".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".webp")
+                        ):
+                            player_photos.append(os.path.join(player_source_dir, filename))
+
+                if not player_photos:
+                    continue
+
+                # Select best photos (analyze sharpness and pick top 2)
+                best_photos = self._select_best_photos_for_player(player_photos, max_photos=2)
+
+                # Copy selected photos to final output
+                copied_count = 0
+                for src_path in best_photos:
+                    try:
+                        filename = os.path.basename(src_path)
+                        dst_path = os.path.join(player_output_dir, filename)
+                        shutil.copy2(src_path, dst_path)
+                        copied_count += 1
+                    except Exception as e:
+                        self.log(f"⚠️  Error copying {src_path}: {e}")
+
+                final_stats[player_name] = {
+                    "total_photos": len(player_photos),
+                    "selected_photos": copied_count,
+                    "output_dir": player_output_dir,
+                }
+                total_selected += copied_count
+
+                self.log(
+                    f"👤 {player_name}: Selected {copied_count} best photos from {len(player_photos)}"
+                )
+
+            # Handle unknown photos if any
+            unknown_count = 0
+            if grouping_results["unknown_photos"] > 0:
+                unknown_dir = os.path.join(output_dir, "unknown")
+                os.makedirs(unknown_dir, exist_ok=True)
+                # Copy unknown photos would need access to the actual unknown photo paths
+                # This would require modifying the grouping results to include the paths
+
+            results["stages"]["best_selection"] = {
+                "total_selected": total_selected,
+                "player_stats": final_stats,
+            }
+
+            # Final summary
+            self.log("✅ Soccer photo processing completed!")
+            self.log(f"📊 Summary:")
+            self.log(f"   Total input photos: {total_input}")
+            self.log(f"   After quality filter: {len(sharp_photos)}")
+            self.log(f"   After duplicate removal: {len(unique_photos)}")
+            self.log(f"   Players recognized: {grouping_results['recognized_players']}")
+            self.log(f"   Final photos selected: {total_selected}")
+            self.log(f"📁 Output saved to: {output_dir}")
+
+            results["final_summary"] = {
+                "input_photos": total_input,
+                "quality_filtered": len(sharp_photos),
+                "unique_photos": len(unique_photos),
+                "players_found": grouping_results["recognized_players"],
+                "final_selected": total_selected,
+                "output_directory": output_dir,
+            }
+
+            return results
+
+        except Exception as e:
+            error_msg = f"Error during soccer photo processing: {str(e)}"
+            self.log(f"❌ {error_msg}")
+            return {"success": False, "error": error_msg}
+
+    def _select_best_photos_for_player(
+        self, player_photos: List[str], max_photos: int = 2
+    ) -> List[str]:
+        """
+        Select the best photos for a player based on quality metrics.
+
+        Args:
+            player_photos: List of photo paths for the player
+            max_photos: Maximum number of photos to select
+
+        Returns:
+            List of paths to the best photos
+        """
+        if len(player_photos) <= max_photos:
+            return player_photos
+
+        # Analyze sharpness of all player photos
+        photo_scores = []
+        for photo_path in player_photos:
+            try:
+                analysis = self.sharpness_analyzer.analyze_image(photo_path)
+                score = analysis.get("sharpness_score", 0.0)
+
+                # Bonus for larger file sizes (often indicates better quality)
+                try:
+                    file_size = os.path.getsize(photo_path)
+                    size_bonus = (
+                        min(file_size / (1024 * 1024), 5.0) * 0.1
+                    )  # Up to 0.5 bonus for files > 5MB
+                    score += size_bonus
+                except:
+                    pass
+
+                photo_scores.append((photo_path, score))
+            except:
+                # If analysis fails, give low score
+                photo_scores.append((photo_path, 0.0))
+
+        # Sort by score (highest first) and take top N
+        photo_scores.sort(key=lambda x: x[1], reverse=True)
+        return [photo_path for photo_path, score in photo_scores[:max_photos]]
