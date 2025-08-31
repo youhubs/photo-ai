@@ -188,7 +188,7 @@ class PhotoAIMainWindow(QMainWindow):
 
         self.mode_button_group = QButtonGroup()
 
-        self.batch_mode_radio = QRadioButton("⚽ Soccer Mode")
+        self.batch_mode_radio = QRadioButton("🏃‍♂️ Batch Mode")
         self.batch_mode_radio.setToolTip(
             "Complete soccer photo processing workflow:\n1. Remove bad-quality photos\n2. Remove duplicates\n3. Group by player\n4. Select best photos per player"
         )

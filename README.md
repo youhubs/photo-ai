@@ -76,7 +76,7 @@ print(f"👥 Found {result['final_summary']['players_found']} players")
 ## Requirements
 
 - **Python**: 3.8+
-- **Memory**: 4GB+ RAM recommended 
+- **Memory**: 4GB+ RAM recommended
 - **Storage**: Photos are copied, originals preserved
 - **Supported Formats**: JPG, JPEG, PNG, WebP, BMP, TIFF
 
