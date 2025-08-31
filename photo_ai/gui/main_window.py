@@ -187,8 +187,9 @@ class PhotoAIMainWindow(QMainWindow):
         self.tab_widget.addTab(self.photo_viewer, "📷 Photo Viewer")
 
         # Results tab
-        self.results_list = QListWidget()
-        self.tab_widget.addTab(self.results_list, "📊 Results")
+        self.results_widget = QTextEdit()
+        self.results_widget.setReadOnly(True)
+        self.tab_widget.addTab(self.results_widget, "📊 Results")
 
         # Logger tab with dark-mode
         self.logger = LoggerWidget(dark_mode=True)
@@ -370,60 +371,192 @@ class PhotoAIMainWindow(QMainWindow):
 
     def display_results(self, results):
         """Display processing results."""
+        # Show detailed results in the Results tab
         if not results.get("success", False):
-            self.results_text.setText(f"Processing failed: {results.get('error', 'Unknown error')}")
+            error_html = f"""
+            <div style='color: #ff6b6b; background: #2a1a1a; padding: 15px; border-radius: 8px; border-left: 4px solid #ff6b6b;'>
+                <h3 style='margin: 0 0 10px 0;'>❌ Processing Failed</h3>
+                <p style='margin: 0;'>{results.get('error', 'Unknown error')}</p>
+            </div>
+            """
+            self.results_widget.setHtml(error_html)
+            # Simple error message in left panel
+            self.results_text.setText("❌ Processing failed. Check Results tab for details.")
             return
 
-        text = f"✅ Processing completed successfully!\\n\\n"
-        text += f"📁 Input directory: {results['input_dir']}\\n"
-        text += f"📷 Total images: {results['total_images']}\\n\\n"
+        # Build detailed HTML for Results tab
+        html = f"""
+        <div style='font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; line-height: 1.4;'>
+            <div style='color: #51cf66; background: #1a2e1a; padding: 15px; border-radius: 8px; border-left: 4px solid #51cf66; margin-bottom: 20px;'>
+                <h3 style='margin: 0 0 5px 0; font-size: 16px;'>✅ Processing Completed Successfully!</h3>
+            </div>
+            
+            <div style='background: #2a2a2a; padding: 15px; border-radius: 8px; margin-bottom: 15px;'>
+                <h4 style='margin: 0 0 10px 0; color: #74c0fc; font-size: 14px;'>📁 Source Information</h4>
+                <p style='margin: 5px 0; color: #d0d7de;'><strong>Directory:</strong> {os.path.basename(results['input_dir'])}</p>
+                <p style='margin: 5px 0; color: #d0d7de;'><strong>Total Images:</strong> {results['total_images']}</p>
+            </div>
+        """
 
+        # Simple progress summary for left panel
+        progress_text = f"✅ Processing completed!\n\n📷 {results['total_images']} images processed"
+        
         if "stages" in results:
             stages = results["stages"]
 
             if "sharpness" in stages:
                 s = stages["sharpness"]
-                text += f"🔍 Sharpness Analysis:\\n"
-                text += f"   • Sharp images: {s['sharp']}\\n"
-                text += f"   • Blurry images: {s['blurry']}\\n\\n"
+                total = s['sharp'] + s['blurry']
+                sharp_pct = (s['sharp'] / total * 100) if total > 0 else 0
+                progress_text += f"\n🔍 {s['sharp']} sharp images ({sharp_pct:.0f}%)"
+                
+                html += f"""
+                <div style='background: #2a2a2a; padding: 15px; border-radius: 8px; margin-bottom: 15px;'>
+                    <h4 style='margin: 0 0 10px 0; color: #74c0fc; font-size: 14px;'>🔍 Sharpness Analysis</h4>
+                    <div style='display: flex; justify-content: space-between; margin: 8px 0;'>
+                        <span style='color: #51cf66;'>✨ Sharp images:</span>
+                        <span style='color: #d0d7de; font-weight: bold;'>{s['sharp']} ({sharp_pct:.1f}%)</span>
+                    </div>
+                    <div style='display: flex; justify-content: space-between; margin: 8px 0;'>
+                        <span style='color: #ff8cc8;'>🌫️ Blurry images:</span>
+                        <span style='color: #d0d7de; font-weight: bold;'>{s['blurry']}</span>
+                    </div>
+                </div>
+                """
 
             if "duplicates" in stages and "skipped" not in stages["duplicates"]:
                 d = stages["duplicates"]["stats"]
-                text += f"🔄 Duplicate Detection:\\n"
-                text += f"   • Exact duplicates: {d['exact_duplicates_count']}\\n"
-                text += f"   • Similar images: {d['similar_images_count']}\\n"
-                text += f"   • Unique images: {d['unique_images_estimate']}\\n\\n"
+                progress_text += f"\n🔄 {d['exact_duplicates_count']} duplicates removed"
+                
+                html += f"""
+                <div style='background: #2a2a2a; padding: 15px; border-radius: 8px; margin-bottom: 15px;'>
+                    <h4 style='margin: 0 0 10px 0; color: #74c0fc; font-size: 14px;'>🔄 Duplicate Detection</h4>
+                    <div style='display: flex; justify-content: space-between; margin: 8px 0;'>
+                        <span style='color: #ffd43b;'>🔗 Exact duplicates:</span>
+                        <span style='color: #d0d7de; font-weight: bold;'>{d['exact_duplicates_count']}</span>
+                    </div>
+                    <div style='display: flex; justify-content: space-between; margin: 8px 0;'>
+                        <span style='color: #74c0fc;'>🎭 Similar images:</span>
+                        <span style='color: #d0d7de; font-weight: bold;'>{d['similar_images_count']}</span>
+                    </div>
+                    <div style='display: flex; justify-content: space-between; margin: 8px 0;'>
+                        <span style='color: #51cf66;'>✨ Unique images:</span>
+                        <span style='color: #d0d7de; font-weight: bold;'>{d['unique_images_estimate']}</span>
+                    </div>
+                </div>
+                """
 
             if "selection" in stages and "skipped" not in stages["selection"]:
                 s = stages["selection"]
-                text += f"⭐ Best Photo Selection:\\n"
-                text += f"   • Best photos selected: {s['best_photos']}\\n\\n"
+                progress_text += f"\n⭐ {s['best_photos']} best photos selected"
+                
+                html += f"""
+                <div style='background: #2a2a2a; padding: 15px; border-radius: 8px; margin-bottom: 15px;'>
+                    <h4 style='margin: 0 0 10px 0; color: #74c0fc; font-size: 14px;'>⭐ Best Photo Selection</h4>
+                    <div style='display: flex; justify-content: space-between; margin: 8px 0;'>
+                        <span style='color: #ffd43b;'>🏆 Best photos selected:</span>
+                        <span style='color: #d0d7de; font-weight: bold;'>{s['best_photos']}</span>
+                    </div>
+                </div>
+                """
 
-        text += f"📊 Check the Results tab for detailed information."
-        self.results_text.setText(text)
+        html += f"""
+            <div style='background: #1a2e2e; padding: 12px; border-radius: 6px; border-left: 3px solid #74c0fc; margin-top: 20px;'>
+                <p style='margin: 0; color: #74c0fc; font-size: 13px;'>💡 <em>Check the Log tab for detailed processing information</em></p>
+            </div>
+        </div>
+        """
+        
+        # Set detailed results in Results tab
+        self.results_widget.setHtml(html)
+        
+        # Set simple progress summary in left panel
+        progress_text += "\n\n📊 See Results tab for full details"
+        self.results_text.setText(progress_text)
+        
+        # Switch to Results tab to show the results
+        self.tab_widget.setCurrentIndex(1)
 
     def display_analysis_results(self, results):
         """Display analysis results."""
-        text = f"🔍 Analysis completed!\\n\\n"
+        html = f"""
+        <div style='font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; line-height: 1.4;'>
+            <div style='color: #74c0fc; background: #1a1a2e; padding: 15px; border-radius: 8px; border-left: 4px solid #74c0fc; margin-bottom: 20px;'>
+                <h3 style='margin: 0 0 5px 0; font-size: 16px;'>🔍 Analysis Completed!</h3>
+            </div>
+        """
+
+        # Simple progress summary for left panel
+        progress_text = "🔍 Analysis completed!\n"
 
         if "sharpness" in results:
             sharp_count = sum(
                 1 for r in results["sharpness"].values() if r.get("overall_is_sharp", False)
             )
             total = len(results["sharpness"])
-            text += f"📸 Sharpness: {sharp_count}/{total} images are sharp\\n"
+            sharp_pct = (sharp_count / total * 100) if total > 0 else 0
+            progress_text += f"\n📸 {sharp_count}/{total} sharp images ({sharp_pct:.0f}%)"
+            
+            html += f"""
+            <div style='background: #2a2a2a; padding: 15px; border-radius: 8px; margin-bottom: 15px;'>
+                <h4 style='margin: 0 0 10px 0; color: #74c0fc; font-size: 14px;'>📸 Sharpness Analysis</h4>
+                <div style='display: flex; justify-content: space-between; margin: 8px 0;'>
+                    <span style='color: #51cf66;'>✨ Sharp images:</span>
+                    <span style='color: #d0d7de; font-weight: bold;'>{sharp_count}/{total} ({sharp_pct:.1f}%)</span>
+                </div>
+            </div>
+            """
 
         if "duplicates" in results:
             stats = results["duplicates"]["stats"]
-            text += f"🔄 Duplicates: {stats['exact_duplicates_count']} exact duplicates found\\n"
-            text += f"🎭 Similar: {stats['similar_images_count']} similar images found\\n"
+            progress_text += f"\n🔄 {stats['exact_duplicates_count']} duplicates found"
+            
+            html += f"""
+            <div style='background: #2a2a2a; padding: 15px; border-radius: 8px; margin-bottom: 15px;'>
+                <h4 style='margin: 0 0 10px 0; color: #74c0fc; font-size: 14px;'>🔄 Duplicate Analysis</h4>
+                <div style='display: flex; justify-content: space-between; margin: 8px 0;'>
+                    <span style='color: #ffd43b;'>🔗 Exact duplicates:</span>
+                    <span style='color: #d0d7de; font-weight: bold;'>{stats['exact_duplicates_count']}</span>
+                </div>
+                <div style='display: flex; justify-content: space-between; margin: 8px 0;'>
+                    <span style='color: #74c0fc;'>🎭 Similar images:</span>
+                    <span style='color: #d0d7de; font-weight: bold;'>{stats['similar_images_count']}</span>
+                </div>
+            </div>
+            """
 
         if "faces" in results:
             face_count = sum(1 for r in results["faces"].values() if r.get("face_info"))
             total = len(results["faces"])
-            text += f"👤 Faces: {face_count}/{total} images have detectable faces\\n"
+            face_pct = (face_count / total * 100) if total > 0 else 0
+            progress_text += f"\n👤 {face_count}/{total} images with faces ({face_pct:.0f}%)"
+            
+            html += f"""
+            <div style='background: #2a2a2a; padding: 15px; border-radius: 8px; margin-bottom: 15px;'>
+                <h4 style='margin: 0 0 10px 0; color: #74c0fc; font-size: 14px;'>👤 Face Detection</h4>
+                <div style='display: flex; justify-content: space-between; margin: 8px 0;'>
+                    <span style='color: #ff8cc8;'>😊 Images with faces:</span>
+                    <span style='color: #d0d7de; font-weight: bold;'>{face_count}/{total} ({face_pct:.1f}%)</span>
+                </div>
+            </div>
+            """
 
-        self.results_text.setText(text)
+        html += f"""
+            <div style='background: #1a2e2e; padding: 12px; border-radius: 6px; border-left: 3px solid #74c0fc; margin-top: 20px;'>
+                <p style='margin: 0; color: #74c0fc; font-size: 13px;'>💡 <em>Check the Log tab for detailed analysis information</em></p>
+            </div>
+        </div>
+        """
+        
+        # Set detailed results in Results tab
+        self.results_widget.setHtml(html)
+        
+        # Set simple progress summary in left panel
+        progress_text += "\n\n📊 See Results tab for full details"
+        self.results_text.setText(progress_text)
+        
+        # Switch to Results tab to show the results
+        self.tab_widget.setCurrentIndex(1)
 
     def log_message(self, message: str, level: str = "info"):
         from datetime import datetime
