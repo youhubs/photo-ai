@@ -7,23 +7,19 @@ from PyQt6.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QHBoxLayout,
-    QGridLayout,
+    QGroupBox,
     QPushButton,
     QLabel,
     QTextEdit,
     QProgressBar,
-    QGroupBox,
-    QFileDialog,
-    QMessageBox,
     QTabWidget,
     QListWidget,
-    QListWidgetItem,
+    QFileDialog,
+    QMessageBox,
     QSplitter,
-    QFrame,
-    QScrollArea,
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer
-from PyQt6.QtGui import QFont, QPixmap, QIcon
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QFont
 
 from ..core.photo_processor import PhotoProcessor
 from ..core.config import Config
@@ -31,6 +27,7 @@ from .dialogs.visa_dialog import VisaPhotoDialog
 from .dialogs.settings_dialog import SettingsDialog
 from .widgets.photo_viewer import PhotoViewer
 from .widgets.processing_thread import ProcessingThread
+from .widgets.logger_widget import LoggerWidget
 
 
 class PhotoAIMainWindow(QMainWindow):
@@ -80,10 +77,10 @@ class PhotoAIMainWindow(QMainWindow):
         # Set splitter proportions
         splitter.setSizes([400, 800])
 
-        # Create status bar
+        # Status bar
         self.statusBar().showMessage("Ready to process photos")
 
-        # Create menu bar
+        # Menu bar
         self.create_menu_bar()
 
     def create_left_panel(self) -> QWidget:
@@ -108,19 +105,16 @@ class PhotoAIMainWindow(QMainWindow):
         selection_group = QGroupBox("Photo Selection")
         selection_layout = QVBoxLayout(selection_group)
 
-        # Folder selection
         self.select_folder_btn = QPushButton("📁 Select Photo Folder")
         self.select_folder_btn.setMinimumHeight(50)
         self.select_folder_btn.setToolTip("Select a folder containing photos to process")
         selection_layout.addWidget(self.select_folder_btn)
 
-        # Individual file selection
         self.select_files_btn = QPushButton("🖼️ Select Individual Photos")
         self.select_files_btn.setMinimumHeight(50)
         self.select_files_btn.setToolTip("Select specific photo files to process")
         selection_layout.addWidget(self.select_files_btn)
 
-        # Selected path display
         self.selected_path_label = QLabel("No folder or files selected")
         self.selected_path_label.setWordWrap(True)
         self.selected_path_label.setStyleSheet(
@@ -130,24 +124,21 @@ class PhotoAIMainWindow(QMainWindow):
 
         layout.addWidget(selection_group)
 
-        # Processing options group
+        # Processing options
         processing_group = QGroupBox("Processing Options")
         processing_layout = QVBoxLayout(processing_group)
 
-        # Main processing button
         self.process_btn = QPushButton("🚀 Process Photos")
         self.process_btn.setMinimumHeight(50)
         self.process_btn.setEnabled(False)
         self.process_btn.setToolTip("Run the complete photo processing pipeline")
         processing_layout.addWidget(self.process_btn)
 
-        # Visa photo button
         self.visa_btn = QPushButton("📄 Create Visa Photo")
         self.visa_btn.setMinimumHeight(40)
         self.visa_btn.setToolTip("Create a visa/passport photo from selected image")
         processing_layout.addWidget(self.visa_btn)
 
-        # Analyze only button
         self.analyze_btn = QPushButton("🔍 Analyze Quality Only")
         self.analyze_btn.setMinimumHeight(40)
         self.analyze_btn.setEnabled(False)
@@ -184,15 +175,14 @@ class PhotoAIMainWindow(QMainWindow):
         return panel
 
     def create_right_panel(self) -> QWidget:
-        """Create the right panel with tabs for different views."""
+        """Create the right panel with tabs."""
         panel = QWidget()
         layout = QVBoxLayout(panel)
 
-        # Tab widget
         self.tab_widget = QTabWidget()
         layout.addWidget(self.tab_widget)
 
-        # Photo viewer tab
+        # Photo viewer
         self.photo_viewer = PhotoViewer()
         self.tab_widget.addTab(self.photo_viewer, "📷 Photo Viewer")
 
@@ -200,36 +190,30 @@ class PhotoAIMainWindow(QMainWindow):
         self.results_list = QListWidget()
         self.tab_widget.addTab(self.results_list, "📊 Results")
 
-        # Log tab
-        self.log_text = QTextEdit()
-        self.log_text.setReadOnly(True)
-        self.log_text.setFont(QFont("Consolas", 10))
-        self.tab_widget.addTab(self.log_text, "📝 Log")
+        # Logger tab with dark-mode
+        self.logger = LoggerWidget(dark_mode=True)
+        self.tab_widget.addTab(self.logger, "📝 Log")
 
         return panel
 
     def create_menu_bar(self):
-        """Create the application menu bar."""
+        """Create menu bar."""
         menubar = self.menuBar()
 
-        # File menu
         file_menu = menubar.addMenu("File")
         file_menu.addAction("Select Folder", self.select_folder)
         file_menu.addAction("Select Files", self.select_files)
         file_menu.addSeparator()
         file_menu.addAction("Exit", self.close)
 
-        # Tools menu
         tools_menu = menubar.addMenu("Tools")
         tools_menu.addAction("Create Visa Photo", self.open_visa_dialog)
         tools_menu.addAction("Settings", self.open_settings)
 
-        # Help menu
         help_menu = menubar.addMenu("Help")
         help_menu.addAction("About", self.show_about)
 
     def setup_connections(self):
-        """Setup signal connections."""
         self.select_folder_btn.clicked.connect(self.select_folder)
         self.select_files_btn.clicked.connect(self.select_files)
         self.process_btn.clicked.connect(self.start_processing)
@@ -238,11 +222,9 @@ class PhotoAIMainWindow(QMainWindow):
         self.settings_btn.clicked.connect(self.open_settings)
 
     def select_folder(self):
-        """Select a folder containing photos."""
         folder = QFileDialog.getExistingDirectory(
             self, "Select Photo Folder", "", QFileDialog.Option.ShowDirsOnly
         )
-
         if folder:
             self.selected_folder = folder
             self.selected_files = []
@@ -250,14 +232,12 @@ class PhotoAIMainWindow(QMainWindow):
             self.load_photos_preview()
 
     def select_files(self):
-        """Select individual photo files."""
         files, _ = QFileDialog.getOpenFileNames(
             self,
             "Select Photo Files",
             "",
             "Image Files (*.jpg *.jpeg *.png *.bmp *.tiff *.webp);;All Files (*)",
         )
-
         if files:
             self.selected_files = files
             self.selected_folder = None
@@ -265,113 +245,81 @@ class PhotoAIMainWindow(QMainWindow):
             self.load_photos_preview()
 
     def update_selection_display(self):
-        """Update the selection display and enable/disable buttons."""
         if self.selected_folder:
             from ..utils.image_utils import get_image_paths
-
             image_count = len(get_image_paths(self.selected_folder))
-            text = f"Folder: {self.selected_folder}\\n({image_count} images found)"
+            text = f"Folder: {self.selected_folder}\n({image_count} images found)"
             self.process_btn.setEnabled(image_count > 0)
             self.analyze_btn.setEnabled(image_count > 0)
         elif self.selected_files:
             count = len(self.selected_files)
-            text = f"Selected {count} file{'s' if count != 1 else ''}\\n"
-            text += "\\n".join([os.path.basename(f) for f in self.selected_files[:3]])
+            text = f"Selected {count} file{'s' if count != 1 else ''}\n"
+            text += "\n".join([os.path.basename(f) for f in self.selected_files[:3]])
             if count > 3:
-                text += f"\\n... and {count - 3} more"
+                text += f"\n... and {count - 3} more"
             self.process_btn.setEnabled(count > 0)
             self.analyze_btn.setEnabled(count > 0)
         else:
             text = "No folder or files selected"
             self.process_btn.setEnabled(False)
             self.analyze_btn.setEnabled(False)
-
         self.selected_path_label.setText(text)
 
     def load_photos_preview(self):
-        """Load photo previews in the viewer."""
         if self.selected_folder:
             from ..utils.image_utils import get_image_paths
-
             photos = get_image_paths(self.selected_folder)
         else:
             photos = self.selected_files
-
         self.photo_viewer.load_photos(photos)
 
     def start_processing(self):
-        """Start the photo processing in a separate thread."""
         if self.current_processing_thread and self.current_processing_thread.isRunning():
             return
 
-        # Get photos to process
-        if self.selected_folder:
-            input_source = self.selected_folder
-        else:
-            input_source = self.selected_files
-
-        # Create and start processing thread
+        input_source = self.selected_folder if self.selected_folder else self.selected_files
         self.current_processing_thread = ProcessingThread(self.processor, input_source, "process")
-
-        # Connect signals
         self.current_processing_thread.progress_updated.connect(self.update_progress)
         self.current_processing_thread.status_updated.connect(self.update_status)
         self.current_processing_thread.finished_processing.connect(self.on_processing_finished)
         self.current_processing_thread.error_occurred.connect(self.on_processing_error)
 
-        # Update UI
         self.show_progress(True)
         self.process_btn.setEnabled(False)
         self.analyze_btn.setEnabled(False)
 
-        # Start processing
         self.current_processing_thread.start()
-        self.log_message("Started photo processing...")
+        self.log_message("Started photo processing...", "info")
 
     def start_analysis(self):
-        """Start photo analysis only."""
         if self.current_processing_thread and self.current_processing_thread.isRunning():
             return
 
-        # Get photos to analyze
-        if self.selected_folder:
-            input_source = self.selected_folder
-        else:
-            input_source = self.selected_files
-
-        # Create and start analysis thread
+        input_source = self.selected_folder if self.selected_folder else self.selected_files
         self.current_processing_thread = ProcessingThread(self.processor, input_source, "analyze")
-
-        # Connect signals
         self.current_processing_thread.progress_updated.connect(self.update_progress)
         self.current_processing_thread.status_updated.connect(self.update_status)
         self.current_processing_thread.finished_processing.connect(self.on_analysis_finished)
         self.current_processing_thread.error_occurred.connect(self.on_processing_error)
 
-        # Update UI
         self.show_progress(True)
         self.process_btn.setEnabled(False)
         self.analyze_btn.setEnabled(False)
 
-        # Start analysis
         self.current_processing_thread.start()
-        self.log_message("Started photo analysis...")
+        self.log_message("Started photo analysis...", "info")
 
     def open_visa_dialog(self):
-        """Open the visa photo creation dialog."""
         dialog = VisaPhotoDialog(self.processor, self)
         dialog.exec()
 
     def open_settings(self):
-        """Open the settings dialog."""
         dialog = SettingsDialog(self.config, self)
         if dialog.exec():
-            # Reload processor with new config
             self.processor = PhotoProcessor(self.config)
-            self.log_message("Settings updated")
+            self.log_message("Settings updated", "success")
 
     def show_about(self):
-        """Show about dialog."""
         QMessageBox.about(
             self,
             "About Photo AI",
@@ -382,7 +330,6 @@ class PhotoAIMainWindow(QMainWindow):
         )
 
     def show_progress(self, show: bool):
-        """Show or hide progress indicators."""
         self.progress_bar.setVisible(show)
         self.progress_label.setVisible(show)
         if not show:
@@ -390,46 +337,36 @@ class PhotoAIMainWindow(QMainWindow):
             self.progress_label.setText("")
 
     def update_progress(self, value: int):
-        """Update progress bar value."""
         self.progress_bar.setValue(value)
 
     def update_status(self, message: str):
-        """Update status message."""
         self.progress_label.setText(message)
         self.statusBar().showMessage(message)
-        self.log_message(message)
+        self.log_message(message, "info")
 
     def on_processing_finished(self, results):
-        """Handle processing completion."""
         self.show_progress(False)
         self.process_btn.setEnabled(True)
         self.analyze_btn.setEnabled(True)
-
-        # Display results
         self.display_results(results)
         self.statusBar().showMessage("Processing completed successfully")
-        self.log_message("Processing completed successfully")
+        self.log_message("Processing completed successfully", "success")
 
     def on_analysis_finished(self, results):
-        """Handle analysis completion."""
         self.show_progress(False)
         self.process_btn.setEnabled(True)
         self.analyze_btn.setEnabled(True)
-
-        # Display analysis results
         self.display_analysis_results(results)
         self.statusBar().showMessage("Analysis completed successfully")
-        self.log_message("Analysis completed successfully")
+        self.log_message("Analysis completed successfully", "success")
 
     def on_processing_error(self, error_message: str):
-        """Handle processing error."""
         self.show_progress(False)
         self.process_btn.setEnabled(True)
         self.analyze_btn.setEnabled(True)
-
-        QMessageBox.critical(self, "Processing Error", f"An error occurred:\\n\\n{error_message}")
+        QMessageBox.critical(self, "Processing Error", f"An error occurred:\n\n{error_message}")
         self.statusBar().showMessage("Processing failed")
-        self.log_message(f"Error: {error_message}")
+        self.log_message(f"Error: {error_message}", "error")
 
     def display_results(self, results):
         """Display processing results."""
@@ -488,15 +425,24 @@ class PhotoAIMainWindow(QMainWindow):
 
         self.results_text.setText(text)
 
-    def log_message(self, message: str):
-        """Add message to log tab."""
+    def log_message(self, message: str, level: str = "info"):
         from datetime import datetime
-
         timestamp = datetime.now().strftime("%H:%M:%S")
-        self.log_text.append(f"[{timestamp}] {message}")
+        formatted_msg = f"[{timestamp}] {message}"
+
+        if hasattr(self, "logger"):
+            if level == "info":
+                self.logger.log_info(formatted_msg)
+            elif level == "success":
+                self.logger.log_success(formatted_msg)
+            elif level == "warning":
+                self.logger.log_warning(formatted_msg)
+            elif level == "error":
+                self.logger.log_error(formatted_msg)
+            else:
+                self.logger.log(formatted_msg)
 
     def closeEvent(self, event):
-        """Handle application close event."""
         if self.current_processing_thread and self.current_processing_thread.isRunning():
             reply = QMessageBox.question(
                 self,
@@ -505,7 +451,6 @@ class PhotoAIMainWindow(QMainWindow):
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No,
             )
-
             if reply == QMessageBox.StandardButton.Yes:
                 self.current_processing_thread.terminate()
                 event.accept()
