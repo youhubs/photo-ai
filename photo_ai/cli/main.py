@@ -16,9 +16,9 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Complete soccer photo processing workflow
+  # Complete photo processing workflow
   photo-ai soccer photos/                     # Quality filter → duplicate removal → player grouping → best selection
-  photo-ai soccer photos/ -p custom_players/ # Use custom players reference directory
+  photo-ai soccer photos/ -p custom_players/  # Use custom players reference directory
   photo-ai soccer photos/ -o final_results/  # Output to custom directory
   photo-ai soccer photos/ --max-photos 3     # Select up to 3 best photos per player
   
@@ -140,7 +140,7 @@ Requirements: Create a players/ folder with reference photos named after each pl
 Output: Organized player folders with only the best quality, unique photos
         """,
     )
-    soccer_parser.add_argument("directory", help="Directory containing soccer game photos")
+    soccer_parser.add_argument("directory", help="Directory containing photos to process")
     soccer_parser.add_argument(
         "--players-dir",
         "-p",
@@ -156,6 +156,34 @@ Output: Organized player folders with only the best quality, unique photos
         type=int,
         default=2,
         help="Maximum number of best photos to select per player (default: 2)",
+    )
+
+    # Legacy people processing command (backward compatibility)
+    people_parser = subparsers.add_parser(
+        "people",
+        help="Legacy command - use 'soccer' for sports photo processing",
+        description="""
+Legacy command for backward compatibility. Use 'photo-ai soccer' instead.
+
+This command now redirects to the soccer photo processing workflow.
+        """,
+    )
+    people_parser.add_argument("directory", help="Directory containing photos to process")
+    people_parser.add_argument(
+        "--people-dir",
+        "-p",
+        help="Directory containing reference people photos (default: directory/people)",
+    )
+    people_parser.add_argument(
+        "--output",
+        "-o",
+        help="Output directory (default: directory/output)",
+    )
+    people_parser.add_argument(
+        "--max-photos",
+        type=int,
+        default=2,
+        help="Maximum number of best photos to select per person (default: 2)",
     )
 
     # Stats command
@@ -266,6 +294,27 @@ Output: Organized player folders with only the best quality, unique photos
 
             result = processor.process_soccer_photos_complete(
                 args.directory, args.players_dir, args.output
+            )
+
+            if not result["success"]:
+                print(f"Error: {result['error']}")
+                return 1
+
+            _print_soccer_results(result)
+
+        elif args.command == "people":
+            print("Note: 'people' command is deprecated. Use 'soccer' for sports photo processing.")
+            if not os.path.exists(args.directory):
+                print(f"Error: Directory not found: {args.directory}")
+                return 1
+
+            # Convert people_dir to players_dir for backward compatibility
+            players_dir = args.people_dir
+            if players_dir and "people" in players_dir:
+                players_dir = players_dir.replace("people", "players")
+
+            result = processor.process_soccer_photos_complete(
+                args.directory, players_dir, args.output
             )
 
             if not result["success"]:
@@ -451,7 +500,7 @@ def _print_soccer_results(result):
     print("\\n=== Soccer Photo Processing Results ===")
 
     summary = result.get("final_summary", {})
-    print(f"⚽ Complete Processing Summary:")
+    print(f"📸 Complete Processing Summary:")
     print(f"   📸 Input photos: {summary.get('input_photos', 0)}")
     print(f"   ✨ Quality filtered: {summary.get('quality_filtered', 0)}")
     print(f"   🔄 After duplicates removed: {summary.get('unique_photos', 0)}")
@@ -486,10 +535,10 @@ def _print_soccer_results(result):
         print(f"\\n🔍 Stage 4 - Best Photo Selection:")
         print(f"   Total photos selected: {stage.get('total_selected', 0)}")
 
-        player_stats = stage.get("player_stats", {})
-        if player_stats:
+        person_stats = stage.get("player_stats", {})
+        if person_stats:
             print(f"\\n👤 Selected Photos per Player:")
-            for player_name, stats in player_stats.items():
+            for player_name, stats in person_stats.items():
                 print(
                     f"   {player_name}: {stats['selected_photos']}/{stats['total_photos']} photos"
                 )

@@ -367,16 +367,16 @@ class ProcessingThread(QThread):
             self.error_occurred.emit(f"Photo selection failed: {str(e)}")
 
     def run_best_selection_step(self):
-        """Run best photo selection per player step - requires player grouping to be completed."""
-        self.status_updated.emit("Starting best photo selection per player...")
+        """Run best photo selection per person step - requires person grouping to be completed."""
+        self.status_updated.emit("Starting best photo selection per person...")
         self.progress_updated.emit(0)
 
         try:
-            # This step requires the complete soccer workflow as it needs:
+            # This step requires the complete photo workflow as it needs:
             # 1. Quality filtered photos
             # 2. Duplicate-free photos
-            # 3. Player grouping completed
-            # 4. Then select best photos per player
+            # 3. Person grouping completed
+            # 4. Then select best photos per person
 
             # For now, show a message that this requires the complete workflow
             self.status_updated.emit("Best photo selection requires complete workflow...")
@@ -384,8 +384,8 @@ class ProcessingThread(QThread):
 
             results = {
                 "success": False,
-                "error": "Best photo selection per player requires running the complete soccer workflow. Use the 'soccer' command instead of individual steps for the full 4-stage process.",
-                "message": "To select best photos per player:\n1. Use 'photo-ai soccer your_photos/'\n2. This will run all 4 stages automatically",
+                "error": "Best photo selection per person requires running the complete photo workflow. Use the 'people' command instead of individual steps for the full 4-stage process.",
+                "message": "To select best photos per person:\n1. Use 'photo-ai people your_photos/'\n2. This will run all 4 stages automatically",
             }
 
             self.progress_updated.emit(100)

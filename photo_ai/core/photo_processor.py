@@ -517,7 +517,7 @@ class PhotoProcessor:
         self, input_dir: str, players_dir: str = None, output_dir: str = None
     ) -> Dict:
         """
-        Complete soccer photo processing workflow:
+        Complete soccer photo processing workflow organized by players:
         1. Remove bad-quality photos (blurry, out-of-focus)
         2. Remove duplicate or near-duplicate photos
         3. Group photos by player using reference faces
@@ -525,12 +525,31 @@ class PhotoProcessor:
         5. Save organized by player folders
 
         Args:
-            input_dir: Directory containing soccer game photos
+            input_dir: Directory containing photos to process
             players_dir: Directory with reference player photos (default: input_dir/players)
             output_dir: Output directory (default: input_dir/output)
 
         Returns:
             Dictionary with processing results and statistics
+        """
+        return self._process_soccer_photos_internal(input_dir, players_dir, output_dir)
+
+    def process_photos_by_people_complete(
+        self, input_dir: str, people_dir: str = None, output_dir: str = None
+    ) -> Dict:
+        """
+        Legacy method name - use process_soccer_photos_complete instead.
+        Complete soccer photo processing workflow organized by players.
+        """
+        # Map new parameter names to old ones
+        players_dir = people_dir if people_dir else None
+        return self.process_soccer_photos_complete(input_dir, players_dir, output_dir)
+
+    def _process_soccer_photos_internal(
+        self, input_dir: str, players_dir: str = None, output_dir: str = None
+    ) -> Dict:
+        """
+        Internal implementation of the complete soccer photo processing workflow.
         """
         if players_dir is None:
             players_dir = os.path.join(input_dir, "players")
@@ -538,7 +557,7 @@ class PhotoProcessor:
         if output_dir is None:
             output_dir = os.path.join(input_dir, "output")
 
-        self.log("⚽ Starting comprehensive soccer photo processing...")
+        self.log("📸 Starting comprehensive photo processing...")
         self.log(f"📁 Input directory: {input_dir}")
         self.log(f"👥 Players directory: {players_dir}")
         self.log(f"📤 Output directory: {output_dir}")
@@ -657,7 +676,7 @@ class PhotoProcessor:
             # Process each player's photos
             for player_name, stats in grouping_results.get("group_stats", {}).items():
                 player_output_dir = os.path.join(output_dir, player_name)
-                os.makedirs(player_output_dir, exist_ok=True)
+                os.makedirs(person_output_dir, exist_ok=True)
 
                 # Get all photos for this player from the grouping results
                 player_photos = []

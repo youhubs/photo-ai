@@ -1,13 +1,13 @@
-# Photo AI ⚽📸
+# Photo AI 📸🤖
 
-Automated soccer photo processing toolkit. Complete 4-stage workflow to organize your game photos by player with only the best quality images.
+Advanced sports photo processing and organization toolkit. Complete 4-stage workflow to automatically organize your soccer photos by player with only the best quality images.
 
 ## Features
 
-⚽ **Complete Soccer Photo Processing Workflow:**
+📸 **Complete Photo Processing Workflow:**
 1. **Remove Bad-Quality Photos** - Filter out blurry, out-of-focus images
 2. **Remove Duplicate Photos** - Keep only the best version of similar shots  
-3. **Group Photos by Player** - Automatically organize by detected players
+3. **Group Photos by Player** - Automatically organize by detected players using reference player photos
 4. **Select Best Photos per Player** - Choose 1-2 highest quality photos per player
 
 ## Quick Start
@@ -29,22 +29,22 @@ photo-ai-gui
 ### ⚽ **Soccer Photo Processing**
 
 **Setup:**
-1. Create a `players/` folder in your game photos directory
+1. Create a `players/` folder in your photo directory
 2. Add one reference photo per player (e.g., `Messi.jpg`, `Ronaldo.jpg`)
 3. Run the complete workflow
 
 **Command Line:**
 ```bash
 # Complete 4-stage soccer photo processing  
-photo-ai soccer game_photos/
+photo-ai soccer my_photos/
 
 # With custom options
-photo-ai soccer game_photos/ --players-dir custom_players/ --max-photos 3
+photo-ai soccer my_photos/ --players-dir custom_players/ --max-photos 3
 ```
 
 **Expected Output:**
 ```
-game_photos/output/
+my_photos/output/
 ├── Messi/
 │   ├── best_photo_1.jpg
 │   └── best_photo_2.jpg  
@@ -60,12 +60,12 @@ game_photos/output/
 ```python
 from photo_ai import PhotoProcessor
 
-# Complete soccer photo processing
+# Complete soccer photo processing workflow
 processor = PhotoProcessor()
 result = processor.process_soccer_photos_complete(
-    input_dir="game_photos/",
-    players_dir="game_photos/players/", 
-    output_dir="game_photos/output/"
+    input_dir="my_photos/",
+    players_dir="my_photos/players/", 
+    output_dir="my_photos/output/"
 )
 
 print(f"✅ Processed {result['final_summary']['input_photos']} photos")
@@ -117,4 +117,4 @@ This project is licensed under the MIT License.
 
 ---
 
-**Photo AI** ⚽ - Automated soccer photo organization made simple!
+**Photo AI** 📸 - Automated soccer photo organization made simple!

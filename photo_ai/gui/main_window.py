@@ -190,7 +190,7 @@ class PhotoAIMainWindow(QMainWindow):
 
         self.batch_mode_radio = QRadioButton("🏃‍♂️ Batch Mode")
         self.batch_mode_radio.setToolTip(
-            "Complete soccer photo processing workflow:\n1. Remove bad-quality photos\n2. Remove duplicates\n3. Group by player\n4. Select best photos per player"
+            "Complete photo processing workflow:\n1. Remove bad-quality photos\n2. Remove duplicates\n3. Group by person\n4. Select best photos per person"
         )
         self.batch_mode_radio.setChecked(True)
         mode_layout.addWidget(self.batch_mode_radio)
@@ -263,22 +263,22 @@ class PhotoAIMainWindow(QMainWindow):
         self.step2_btn.setStyleSheet("QPushButton { text-align: left; padding-left: 10px; }")
         processing_layout.addWidget(self.step2_btn)
 
-        self.step3_btn = QPushButton("3️⃣ Group Photos by Player")
+        self.step3_btn = QPushButton("3️⃣ Group Photos by Person")
         self.step3_btn.setMinimumHeight(45)
         self.step3_btn.setMaximumHeight(45)
         self.step3_btn.setEnabled(False)
         self.step3_btn.setToolTip(
-            "Group all game photos according to detected players using reference faces from players/ folder"
+            "Group all photos according to detected players using reference faces from players/ folder"
         )
         self.step3_btn.setStyleSheet("QPushButton { text-align: left; padding-left: 10px; }")
         processing_layout.addWidget(self.step3_btn)
 
-        self.step4_btn = QPushButton("4️⃣ Select Best Photos per Player")
+        self.step4_btn = QPushButton("4️⃣ Select Best Photos per Person")
         self.step4_btn.setMinimumHeight(45)
         self.step4_btn.setMaximumHeight(45)
         self.step4_btn.setEnabled(False)
         self.step4_btn.setToolTip(
-            "Automatically select 1-2 best-quality and most representative photos per player"
+            "Automatically select 1-2 best-quality and most representative photos per person"
         )
         self.step4_btn.setStyleSheet("QPushButton { text-align: left; padding-left: 10px; }")
         processing_layout.addWidget(self.step4_btn)
@@ -454,19 +454,19 @@ class PhotoAIMainWindow(QMainWindow):
         self.visa_btn.setVisible(False)
         self.enhance_btn.setVisible(False)
 
-        self.selected_path_label.setText("No sports photos selected")
+        self.selected_path_label.setText("No photos selected")
 
         # Initialize results text for step-by-step processing
         if not hasattr(self, "results_text_initialized"):
             self.results_text.setText(
-                "⚽ Soccer Photo Processing Ready\n\n"
+                "📸 Photo Processing Ready\n\n"
                 "Select photos and follow the 4-step workflow:\n"
                 "1️⃣ Remove Bad-Quality Photos\n"
                 "2️⃣ Remove Duplicate Photos\n"
-                "3️⃣ Group Photos by Player\n"
-                "4️⃣ Select Best Photos per Player\n\n"
+                "3️⃣ Group Photos by Person\n"
+                "4️⃣ Select Best Photos per Person\n\n"
                 "💡 Tip: Create a 'players/' folder with reference photos\n"
-                "(e.g., Messi.jpg, Ronaldo.jpg)"
+                "(e.g., John.jpg, Mary.jpg)"
             )
             self.results_text_initialized = True
 
@@ -603,16 +603,16 @@ class PhotoAIMainWindow(QMainWindow):
         """Reset step button text to original state."""
         self.step1_btn.setText("1️⃣ Remove Bad-Quality Photos")
         self.step2_btn.setText("2️⃣ Remove Duplicate Photos")
-        self.step3_btn.setText("3️⃣ Group Photos by Player")
-        self.step4_btn.setText("4️⃣ Select Best Photos per Player")
+        self.step3_btn.setText("3️⃣ Group Photos by Person")
+        self.step4_btn.setText("4️⃣ Select Best Photos per Person")
 
     def update_step_button_status(self, step_name: str, status: str):
         """Update the visual status of step buttons."""
         step_buttons = {
             "quality": (self.step1_btn, "Remove Bad-Quality Photos"),
             "duplicates": (self.step2_btn, "Remove Duplicate Photos"),
-            "player_grouping": (self.step3_btn, "Group Photos by Player"),
-            "best_selection": (self.step4_btn, "Select Best Photos per Player"),
+            "player_grouping": (self.step3_btn, "Group Photos by Person"),
+            "best_selection": (self.step4_btn, "Select Best Photos per Person"),
         }
 
         if step_name in step_buttons:
@@ -751,7 +751,7 @@ class PhotoAIMainWindow(QMainWindow):
             )
             return
 
-        # This would be the results from the complete soccer workflow
+        # This would be the results from the complete photo workflow
         final_summary = results.get("final_summary", {})
         final_selected = final_summary.get("final_selected", 0)
         players_found = final_summary.get("players_found", 0)
@@ -760,7 +760,7 @@ class PhotoAIMainWindow(QMainWindow):
             f"4️⃣ Select Best Photos per Player completed!\n\n"
             f"🏆 {final_selected} best photos selected\n"
             f"👥 {players_found} players processed\n\n"
-            f"📁 Photos organized in player folders"
+            f"📁 Photos organized by player"
         )
         progress_text += "\n\n📊 See Results tab for details"
 
