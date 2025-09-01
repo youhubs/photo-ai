@@ -73,6 +73,37 @@ print(f"🏆 Selected {result['final_summary']['final_selected']} best photos")
 print(f"👥 Found {result['final_summary']['players_found']} players")
 ```
 
+## Building the App
+
+### Desktop Application
+
+```bash
+# Install build dependencies
+pip install pyinstaller
+
+# Build standalone executable
+pyinstaller --onefile --windowed photo_ai_gui.py
+
+# Output: dist/photo_ai_gui.exe (Windows) or dist/photo_ai_gui (Mac/Linux)
+```
+
+### Platform-Specific Builds
+
+**Windows:**
+```bash
+pyinstaller --onefile --windowed --name PhotoAI photo_ai_gui.py
+```
+
+**macOS:**
+```bash
+pyinstaller --onefile --windowed --name "Photo AI" photo_ai_gui.py
+```
+
+**Linux:**
+```bash
+pyinstaller --onefile --windowed --name photo-ai photo_ai_gui.py
+```
+
 ## Requirements
 
 - **Python**: 3.8+

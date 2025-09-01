@@ -374,7 +374,7 @@ class ProcessingThread(QThread):
         try:
             # This step requires the complete soccer workflow as it needs:
             # 1. Quality filtered photos
-            # 2. Duplicate-free photos  
+            # 2. Duplicate-free photos
             # 3. Player grouping completed
             # 4. Then select best photos per player
 
@@ -385,7 +385,7 @@ class ProcessingThread(QThread):
             results = {
                 "success": False,
                 "error": "Best photo selection per player requires running the complete soccer workflow. Use the 'soccer' command instead of individual steps for the full 4-stage process.",
-                "message": "To select best photos per player:\n1. Use 'photo-ai soccer your_photos/'\n2. This will run all 4 stages automatically"
+                "message": "To select best photos per player:\n1. Use 'photo-ai soccer your_photos/'\n2. This will run all 4 stages automatically",
             }
 
             self.progress_updated.emit(100)
